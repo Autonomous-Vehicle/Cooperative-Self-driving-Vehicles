@@ -13,5 +13,17 @@ contains the code need to train and test all the models
 
 ## Instruction
 1 configure your pyhton enviroment, you can install your requirements from requeriments.txt
+
 2 download the dataset from udacity, we also provide a copy of Udacity dataset already organized 
 just download CH2 inside Udacity Dataset Folder, and unzip
+
+
+# Folders
+## out 
+contains results and test made as well as images and the trained models
+
+## Previus test models
+contains previus models from other works
+
+## Udacity Dataset 
+contains a copy of the Udacity dataset easier to use
