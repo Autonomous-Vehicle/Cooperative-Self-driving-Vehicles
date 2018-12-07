@@ -1,0 +1,529 @@
+# IMPORT
+import argparse #for command line arguments
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
+plt.switch_backend('agg')
+matplotlib.use('Agg')
+
+#for debugging, allows for reproducible (deterministic) results
+#np.random.seed(0)
+
+
+#to save our model periodically as checkpoints for loading later
+from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint
+from tensorflow.python.keras import optimizers
+from tensorflow.python.keras import backend as K
+from models import nvidia_model, nvidia_model_tuned,shift_model,nvidia_model_basic,\
+resnet50_pre_trained_model,nvidia_model2, nvidia_model_basic2, nvidia_model_tuned2,shift_model2
+
+from functions import predict, predict_shift, split_dataset_random,angle_loss,split_seq_dataset_groups,generator_seq_dataset_groups
+parser = argparse.ArgumentParser()
+
+import models as models
+import functions as fn
+
+
+#PARSER
+def initparse():
+
+    parser.add_argument('--lr', default=1e-3, type=float)
+    parser.add_argument('--l2reg', default=0.0, type=float)
+    parser.add_argument('--loss', default='l2')
+    parser.add_argument('--direction', default='center')
+    parser.add_argument('--train_dir', default='Ch2/')
+    parser.add_argument('--val_random', action='store_true')
+    parser.add_argument('--drop_low_angles', action='store_true')
+    parser.add_argument('--augmentation', action='store_true')
+    parser.add_argument('--batch_size', default=64, type=int)
+    parser.add_argument('--steer_threshold', default=0.03, type=float)
+    parser.add_argument('--steer_correction', default=0.1, type=float)
+    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--num_epochs', default=20, type=int)
+    parser.add_argument('--num_samples', default=-1, type=int)
+    parser.add_argument('--use_gpu', action='store_true')
+    parser.add_argument('--pretrained', default='None')
+    parser.add_argument('--save_model', default='None')
+    parser.add_argument('--output', default='angle')
+    parser.add_argument('--window_len', default=4, type=int)
+    parser.add_argument('--mode', default='concat')
+    parser.add_argument('--lookahead', action='store_true')
+    parser.add_argument('--folds', default=4, type=int)
+    parser.add_argument('--root_dir', default='/Users/project ')
+
+def loadargs_model(args):
+    print("LOAD LOCAL ARGS")
+    args.val_random = True
+    #args.num_samples = -1
+    args.output = 'angle'
+    args.l2reg = 0.0
+    args.root_dir = ""
+    args.direction = 'center'
+    args.steer_threshold = 0.03
+    args.drop_low_angles = False
+    args.steer_correction = 0.1
+    args.lr = 1e-3
+    args.loss = '12'
+    args.train_dir = 'Ch2/'
+    args.augmentation = False
+    args.batch_size = 64
+    args.num_workers = 4
+    args.num_epochs = 14
+    args.use_gpu = True
+    args.pretrained = 'out/mymodel'
+    args.save_model = 'out/mymodel'
+    args.save_dir = 'out/'
+    args.lookahead = True
+    args.folds = 4
+    args.mode = 'concat'
+    args.window_len=4
+    args.greyscale=True
+
+    print(args)
+
+#TRIAN FNs
+def train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen):
+    """
+        Train the model
+    """
+    # calculate the difference between expected steering angle and actual steering angle
+    # square the difference
+    # add up all those differences for as many data points as we have
+    # divide by the number of them
+    # that value is our mean squared error! this is what we want to minimize via
+    # gradient descent
+    adam = optimizers.Adam(lr=args.lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0)
+    model.compile(loss="mse", optimizer=adam, metrics=[angle_loss])
+
+    # callbacks = [EarlyStopping(monitor='val_loss',patience=2,verbose=0)]
+    # Saves the model after every epoch.
+    # quantity to monitor, verbosity i.e logging mode (0 or 1),
+    # if save_best_only is true the latest best model according to the quantity monitored will not be overwritten.
+    # mode: one of {auto, min, max}. If save_best_only=True, the decision to overwrite the current save file is
+    # made based on either the maximization or the minimization of the monitored quantity. For val_acc,
+    # this should be max, for val_loss this should be min, etc. In auto mode, the direction is automatically
+    # inferred from the name of the monitored quantity.
+    if args.save_model_steps != 'None':
+        filepath = args.save_model + "-{val_angle_loss:.4f}.h5"
+        checkpoint = ModelCheckpoint(filepath, monitor='angle_loss', verbose=1, save_best_only=True, mode='min')
+        callbacks_list = [checkpoint]
+    else:
+        callbacks_list = []
+
+    # Fits the model on data generated batch-by-batch by a Python generator.
+
+    # The generator is run in parallel to the model, for efficiency.
+    # For instance, this allows you to do real-time data augmentation on images on CPU in
+    # parallel to training your model on GPU.
+    # so we reshape our data into their appropriate batches and train our model simulatenously
+    model.summary()
+    history_object = model.fit_generator(train_gen,
+                                         steps_per_epoch=(len(train_imgs) / args.batch_size),
+                                         validation_data=val_gen,
+                                         validation_steps=(len(val_imgs) / args.batch_size),
+                                         epochs=args.num_epochs,
+                                         verbose=1,
+                                         callbacks=callbacks_list)
+
+    print("Finish history_object")
+    if args.save_model != 'None':
+        #model_json = model.to_json()
+        #with open("modelold.json", "w") as json_file:
+        #    json_file.write(model_json)
+        model.save_weights("{}.h5".format(args.save_model))
+
+    print("Init plot")
+
+    ### plot the training and validation loss for each epoch
+    plt.figure()
+    plt.plot(history_object.history['loss'])
+    plt.plot(history_object.history['val_loss'])
+    plt.title('model mean squared error loss')
+    plt.ylabel('mean squared error loss')
+    plt.xlabel('epoch')
+    plt.legend(['training set', 'validation set'], loc='upper right')
+    plt.savefig(args.save_model +'loss.png')
+    print("Validation loss for  "+ args.save_model )
+    print(history_object.history['val_loss'])
+    print("Loss for  " + args.save_model)
+    print(history_object.history['loss'])
+    print("Finish")
+
+def train_model_custom(model, args, train_imgs, val_imgs, train_gen, val_gen):
+    """
+        Train the model
+    """
+    # calculate the difference between expected steering angle and actual steering angle
+    # square the difference
+    # add up all those differences for as many data points as we have
+    # divide by the number of them
+    # that value is our mean squared error! this is what we want to minimize via
+    # gradient descent
+    model.compile(loss="mean_squared_error", optimizer='adadelta', metrics=[fn.rmse])
+
+    # Check a batch to see the base of the model
+    # print(util.std_evaluate(model, util.generator_seq_dataset_chunks(validation_labels, validation_index_center, image_base_path_validation, 32, number_of_frames=num_frames), validation_index_center.shape[0]//32))
+    history = fn.LossHistory()
+
+    if args.save_model_steps != 'None':
+        filepath = args.save_model + "-{val_angle_loss:.4f}.h5"
+        checkpoint = ModelCheckpoint(filepath, monitor='angle_loss', verbose=1, save_best_only=True, mode='min')
+        callbacks_list = [history,checkpoint]
+    else:
+        callbacks_list = [history]
+
+    model.summary()
+
+
+    # Fits the model on data generated batch-by-batch by a Python generator.
+
+    # The generator is run in parallel to the model, for efficiency.
+    # For instance, this allows you to do real-time data augmentation on images on CPU in
+    # parallel to training your model on GPU.
+    # so we reshape our data into their appropriate batches and train our model simulatenously
+
+    history_object = model.fit_generator(train_gen,
+                                         steps_per_epoch=(len(train_imgs) / args.batch_size),
+                                         validation_data=val_gen,
+                                         validation_steps=(len(val_imgs) / args.batch_size),
+                                         epochs=args.num_epochs,
+                                         verbose=1,
+                                         callbacks=callbacks_list)
+
+    print("Finish history_object")
+    if args.save_model != 'None':
+        #model_json = model.to_json()
+        #with open("modelold.json", "w") as json_file:
+        #    json_file.write(model_json)
+        model.save_weights("{}.h5".format(args.save_model))
+
+    print("Init plot")
+
+    ### plot the training and validation loss for each epoch
+    plt.figure()
+    plt.plot(history_object.history['loss'])
+    plt.plot(history_object.history['val_loss'])
+    plt.title('model mean squared error loss')
+    plt.ylabel('mean squared error loss')
+    plt.xlabel('epoch')
+    plt.legend(['training set', 'validation set'], loc='upper right')
+    plt.savefig(args.save_model +'loss.png')
+    print("Validation loss for  "+ args.save_model )
+    print(history_object.history['val_loss'])
+    print("Loss for  " + args.save_model)
+    print(history_object.history['loss'])
+    print("Finish")
+
+
+# TEST models
+def LSTM_test(args, train_imgs, val_imgs, train_gen, val_gen):
+    # build_model_nvidia_wt_LSTM_TL2
+
+    # chaffeur
+
+    args.pretrained = 'out/mymodelLSTM_multiple_input'
+    args.save_model = 'out/mymodelLSTM_multiple_input'
+
+    model = models.LSTM_multiple_input(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model,val_gen,(len(val_imgs) / args.batch_size)))
+        #predict(model, args.pretrained, args)
+
+def LSTM_test_adam(args, train_imgs, val_imgs, train_gen, val_gen):
+    # build_model_nvidia_wt_LSTM_TL2
+
+    # conv3d
+    print("conv3d")
+    args.pretrained = 'out/mymodelconv3d'
+    args.save_model = 'out/mymodelconv3d'
+
+    model = models.conv3d_model(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+        #predict(model, args.pretrained, args)
+
+
+    # lstm2d
+
+    args.pretrained = 'out/mymodellstm2d'
+    args.save_model = 'out/mymodellstm2d'
+
+    model = models.conv2d_res_lstm_model(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model,val_gen,(len(val_imgs) / args.batch_size)))
+        #predict(model, args.pretrained, args)
+
+def LSTM_img_sharing(args, train_imgs, val_imgs, train_gen, val_gen):
+
+
+
+    # LSTM_img_sharing
+    print("LSTM_img_sharing")
+    args.pretrained = 'out/mymodelLSTM_img_sharing'
+    args.save_model = 'out/mymodelLSTM_img_sharing'
+
+    model = models.LSTM_img_sharing(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+        #predict(model, args.pretrained, args)
+
+    # lstm2
+
+    args.pretrained = 'out/LSTM_multiple_input'
+    args.save_model = 'out/LSTM_multiple_input'
+
+    model = models.LSTM_multiple_input(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+        # predict(model, args.pretrained, args)
+
+def LSTM_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
+
+    # LSTM_img_sharing_ahead
+    print("LSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead2'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead2'
+
+    model = models.LSTM_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+        #predict(model, args.pretrained, args)
+
+def Nvidia_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
+
+
+    print("nvidia_img_sharing_ahead")
+    args.pretrained = 'out/mymodelnvidia_img_sharing_ahead'
+    args.save_model = 'out/mymodelnvidia_img_sharing_ahead'
+
+    model = models.nvidia_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+        #predict(model, args.pretrained, args)
+
+        # LSTM_img_sharing_ahead
+    print("nvidia_img_sharing_ahead2")
+    args.pretrained = 'out/mymodelnvidia_img_sharing_ahead2'
+    args.save_model = 'out/mymodelnvidia_img_sharing_ahead2'
+
+    model = models.nvidia_img_sharing_ahead2(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+        # predict(model, args.pretrained, args)
+
+
+def Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen):
+    # nvidia_model_basic
+
+    args.pretrained = 'out/mymodelnvidia_model_basic'
+    args.save_model = 'out/mymodelnvidia_model_basic'
+    model = nvidia_model_basic()
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+
+    # nvidia_model_basic2
+
+    args.pretrained = 'out/mymodelnvidia_model_basic2'
+    args.save_model = 'out/mymodelnvidia_model_basic2'
+    model = nvidia_model_basic2()
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+        # nvidia
+
+    args.pretrained = 'out/mymodelnvidia'
+    args.save_model = 'out/mymodelnvidia'
+    model = nvidia_model(args.l2reg)
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+
+    # nvidia 2
+
+    args.pretrained = 'out/mymodelnvidia2'
+    args.save_model = 'out/mymodelnvidia2'
+    model = nvidia_model2(args.l2reg)
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+
+    # nvidia_tuned
+
+    args.pretrained = 'out/mymodelnvidia_tuned'
+    args.save_model = 'out/mymodelnvidia_tuned'
+    num_outputs = 1 if args.output == 'angle' else 3
+    model = nvidia_model_tuned(num_outputs, args.l2reg)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+
+    # nvidia_tuned2
+
+    args.pretrained = 'out/mymodelnvidia_tuned2'
+    args.save_model = 'out/mymodelnvidia_tuned2'
+    num_outputs = 1 if args.output == 'angle' else 3
+    model = nvidia_model_tuned2(num_outputs, args.l2reg)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+
+def Transfer_Learning_test(args, train_imgs, val_imgs, train_gen, val_gen):
+    # resnet50_pre_trained_model
+    """
+    args.pretrained = 'out/mymodelbuild_model_resnet50_pre_trained'
+    args.save_model = 'out/mymodelbuild_model_resnet50_pre_trained'
+    model = resnet50_pre_trained_model()
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+    """
+
+    # build_model_resnet50_fully
+    """
+    args.pretrained = 'out/mymodelbuild_model_resnet50_fully'
+    args.save_model = 'out/mymodelbuild_model_resnet50_fully'
+    model = build_model_resnet50_fully()
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        predict(model, args.pretrained, args)
+     """
+
+def Data_sharing_test(args, train_imgs, val_imgs, train_gen, val_gen):
+    args.pretrained = 'out/mymodelshift'
+    args.save_model = 'out/mymodelshift'
+    num_outputs = 1 if args.output == 'angle' else 3
+    num_inputs = 2 if args.mode == 'concat' else 1
+    if args.greyscale == False:
+        num_inputs = num_inputs * 3
+    model = shift_model(num_outputs, args.l2reg, num_inputs)
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    print(train_imgs.shape)
+    if args.pretrained != 'None':
+        predict_shift(model, args.pretrained, args)
+
+    # Shift dataset 2images gray
+
+    args.pretrained = 'out/mymodelshift2'
+    args.save_model = 'out/mymodelshift2'
+    num_outputs = 1 if args.output == 'angle' else 3
+    num_inputs = 2 if args.mode == 'concat' else 1
+    if args.greyscale == False:
+        num_inputs = num_inputs * 3
+    model = shift_model2(num_outputs, args.l2reg, num_inputs)
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    print(train_imgs.shape)
+    if args.pretrained != 'None':
+        predict_shift(model, args.pretrained, args)
+
+    # Shift dataset images dif gray
+
+    args.mode = 'diff'
+    train_gen = generator_seq_dataset_groups(train_imgs, args)
+    val_gen = generator_seq_dataset_groups(val_imgs, args)
+
+    args.pretrained = 'out/mymodelshift_diff'
+    args.save_model = 'out/mymodelshift_diff'
+    num_outputs = 1 if args.output == 'angle' else 3
+    num_inputs = 2 if args.mode == 'concat' else 1
+    if args.greyscale == False:
+        num_inputs = num_inputs * 3
+    model = shift_model(num_outputs, args.l2reg, num_inputs)
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    print(train_imgs.shape)
+    if args.pretrained != 'None':
+        predict_shift(model, args.pretrained, args)
+
+
+def main(args):
+    loadargs_model(args)
+    # for debug reduces number of samples
+    args.num_samples = -1
+    args.num_samples_va=1000
+    args.save_model_steps='None'
+    args.num_frames=10
+    args.lookahead_window=30
+
+    """""
+    # Basic dataset
+    train_imgs, val_imgs = split_dataset_random(args)
+    if args.num_samples > 0:
+        train_imgs = train_imgs[:args.num_samples]
+        val_imgs = val_imgs[:args.num_samples_va]
+
+    train_gen = generator(train_imgs, args)
+    val_gen = generator(val_imgs, args)
+
+
+
+    # Shift dataset 2images gray
+    train_imgs, val_imgs = split_seq_dataset_groups(args)
+    args.mode = 'concat'
+    train_gen = generator_seq_dataset_groups(train_imgs, args)
+    val_gen = generator_seq_dataset_groups(val_imgs, args)
+
+
+    #LSTM
+    args.num_frames = 20
+    train_imgs, val_imgs = fn.split_seq_dataset_chunks(args)
+    train_gen = fn.generator_seq_dataset_chunks(train_imgs[:, 1], train_imgs[:, 0], args, scale=1,
+                                                      random_flip=False)
+    val_gen = fn.generator_seq_dataset_chunks(val_imgs[:, 1], val_imgs[:, 0], args, scale=1, random_flip=False)
+
+    LSTM_test(args, train_imgs, val_imgs, train_gen, val_gen)
+    
+   
+
+"""""
+    args.num_frames = 5
+    train_imgs, val_imgs = fn.split_dataset_random(args)
+
+    train_gen = fn.generator_dataset_random(train_imgs,args)
+    val_gen = fn.generator_dataset_random(val_imgs,args)
+
+    Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen)
+
+if __name__ == '__main__':
+  initparse()
+  args = parser.parse_args()
+  print("START MAIN WITH ARGS")
+  print(args)
+  with K.get_session():
+      main(args)
