@@ -4,7 +4,7 @@
 from tensorflow.python.keras.models import Sequential, Model
 #what types of layers do we want our model to have?
 from tensorflow.python.keras.layers import LSTM,Lambda, Dense, Dropout, Activation, Input,Flatten, Conv2D, MaxPooling2D, \
-    Cropping2D, Dropout,TimeDistributed, Conv3D, MaxPooling3D
+    Cropping2D, Dropout,TimeDistributed, Conv3D, MaxPooling3D,Cropping3D
 from tensorflow.python.keras.layers import BatchNormalization
 from tensorflow.python.keras import regularizers
 from tensorflow.python.keras.applications.resnet50 import ResNet50
@@ -77,10 +77,10 @@ def nvidia_model_tuned(num_outputs, l2reg):
     # Keras NVIDIA type model
     model = Sequential()
     #model.add(Lambda(lambda x: x / 255.0 - 0, input_shape=(480, 640, 3)))
-    model.add(Cropping2D(cropping=((240, 0), (0, 0))))  # trim image to only see section with road
+    model.add(Cropping2D(cropping=((240, 0), (0, 0)), input_shape=(480, 640, 3)))  # trim image to only see section with road
 
     model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu', use_bias=True, kernel_initializer='glorot_normal',
-                     bias_initializer='zeros', input_shape=(480, 640, 3)))
+                     bias_initializer='zeros'))
     model.add(BatchNormalization())
 
     model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu', use_bias=True, kernel_initializer='glorot_normal',
@@ -221,6 +221,115 @@ def nvidia_model_basic():
     model.summary()
 
     return model
+def nvidia_model_basic_cropped():
+    """
+    NVIDIA model used
+    Image normalization to avoid saturation and make gradients work better.
+    Convolution: 5x5, filter: 24, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 36, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 48, strides: 2x2, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Drop out (0.5)
+    Fully connected: neurons: 100, activation: ELU
+    Fully connected: neurons: 50, activation: ELU
+    Fully connected: neurons: 10, activation: ELU
+    Fully connected: neurons: 1 (output)
+    # the convolution layers are meant to handle feature engineering
+    the fully connected layer for predicting the steering angle.
+    dropout avoids overfitting
+    ELU(Exponential linear unit) function takes care of the Vanishing gradient problem.
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(240, 640, 3)))
+    model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu', input_shape=(240, 640, 3)))
+    model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(48, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+
+    return model
+
+def nvidia_model_diff(args):
+    """
+    NVIDIA model used
+    Image normalization to avoid saturation and make gradients work better.
+    Convolution: 5x5, filter: 24, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 36, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 48, strides: 2x2, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Drop out (0.5)
+    Fully connected: neurons: 100, activation: ELU
+    Fully connected: neurons: 50, activation: ELU
+    Fully connected: neurons: 10, activation: ELU
+    Fully connected: neurons: 1 (output)
+    # the convolution layers are meant to handle feature engineering
+    the fully connected layer for predicting the steering angle.
+    dropout avoids overfitting
+    ELU(Exponential linear unit) function takes care of the Vanishing gradient problem.
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(240*args.num_frames, 640, 3)))
+
+    #model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(240*args.num_frames, 640, 3)))
+    model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu', input_shape=(240*args.num_frames, 640, 3)))
+    model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(48, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(64, (3, 3), strides=(2, 2),activation='relu'))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+
+    return model
+
+def nvidia_model_concat(args):
+    """
+    NVIDIA model used
+    Image normalization to avoid saturation and make gradients work better.
+    Convolution: 5x5, filter: 24, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 36, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 48, strides: 2x2, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Drop out (0.5)
+    Fully connected: neurons: 100, activation: ELU
+    Fully connected: neurons: 50, activation: ELU
+    Fully connected: neurons: 10, activation: ELU
+    Fully connected: neurons: 1 (output)
+    # the convolution layers are meant to handle feature engineering
+    the fully connected layer for predicting the steering angle.
+    dropout avoids overfitting
+    ELU(Exponential linear unit) function takes care of the Vanishing gradient problem.
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(240*args.num_frames, 640, 3)))
+    model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu', input_shape=(240*args.num_frames, 640, 3)))
+    model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(48, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(64, (3, 3), strides=(2, 2),activation='relu'))
+    model.add(Conv2D(64, (3, 3),activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+
+    return model
 def nvidia_model_basic2():
     """
     NVIDIA model used
@@ -257,8 +366,7 @@ def nvidia_model_basic2():
     model.summary()
 
     return model
-
-def nvidia_img_sharing_ahead2(args):
+def nvidia_model_basic3():
     """
     NVIDIA model used
     Image normalization to avoid saturation and make gradients work better.
@@ -280,7 +388,47 @@ def nvidia_img_sharing_ahead2(args):
     model = Sequential()
     #model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(480, 640, 3)))
     #model.add(Cropping2D(cropping=((240, 0), (0, 0))))  # trim image to only see section with road
-    model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu', input_shape=(2*args.num_frames,480, 640, 3)))
+    model.add(Lambda(lambda x: x / 127.5 - 1.0, input_shape=(480, 640, 3)))
+    model.add(Cropping2D(cropping=((240, 0), (0, 0))))  # trim image to only see section with road
+    model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(48, (5, 5), strides=(2, 2), activation='relu'))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(Conv2D(64, (3, 3), activation='relu'))
+    model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+
+    return model
+def nvidia_model_basic4():
+    """
+    NVIDIA model used
+    Image normalization to avoid saturation and make gradients work better.
+    Convolution: 5x5, filter: 24, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 36, strides: 2x2, activation: ELU
+    Convolution: 5x5, filter: 48, strides: 2x2, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
+    Drop out (0.5)
+    Fully connected: neurons: 100, activation: ELU
+    Fully connected: neurons: 50, activation: ELU
+    Fully connected: neurons: 10, activation: ELU
+    Fully connected: neurons: 1 (output)
+    # the convolution layers are meant to handle feature engineering
+    the fully connected layer for predicting the steering angle.
+    dropout avoids overfitting
+    ELU(Exponential linear unit) function takes care of the Vanishing gradient problem.
+    """
+    model = Sequential()
+    #model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(480, 640, 3)))
+    #model.add(Cropping2D(cropping=((240, 0), (0, 0))))  # trim image to only see section with road
+   # model.add(Lambda(lambda x: x / 127.5 - 1.0, input_shape=(480, 640, 3)))
+    model.add(Cropping2D(cropping=((240, 0), (0, 0)), input_shape=(480, 640, 3)))  # trim image to only see section with road
+    model.add(Conv2D(24, (5, 5), strides=(2, 2), activation='relu'))
     model.add(Conv2D(36, (5, 5), strides=(2, 2), activation='relu'))
     model.add(Conv2D(48, (5, 5), strides=(2, 2), activation='relu'))
     model.add(Conv2D(64, (3, 3), activation='relu'))
@@ -295,28 +443,208 @@ def nvidia_img_sharing_ahead2(args):
 
     return model
 
+def Con3d_model_just_ahead(args):
+    """
+
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/255, input_shape=(args.num_frames,240, 640, 1)))
+
+    model.add(Conv3D(24, (3, 3,3), strides=(2, 2,2), padding = 'same',activation='relu', input_shape=(args.num_frames,240, 640,1)))
+    model.add(Conv3D(36, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(48, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2)))
+    #model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+    print("test")
+
+    return model
+
+
+def Con3d_model(args):
+    """
+
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(args.num_frames*2,480, 640, 3)))
+    model.add(Conv3D(24, (3, 3,3), strides=(2, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(36, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(48, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2)))
+    #model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+    print("test")
+
+    return model
+def Con3d_model2(args):
+    """
+
+    """
+    model = Sequential()
+    model.add(Conv3D(24, (3, 3,3), strides=(2, 2,2), padding = 'same',activation='relu', input_shape=(args.num_frames*2,480, 640, 3)))
+    model.add(Conv3D(36, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(48, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2)))
+    #model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+    print("test")
+
+    return model
+def Con3d_model3(args):
+    """
+
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(args.num_frames*2,480, 640, 3)))
+    model.add(Cropping3D(cropping=((0,0), (240, 0), (0, 0))))
+    model.add(Conv3D(24, (3, 3,3), strides=(2, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(36, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(48, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2)))
+    #model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+    print("test")
+
+    return model
+def Con3d_model4(args):
+    """
+
+    """
+    model = Sequential()
+    model.add(Cropping3D(cropping=((0,0), (240, 0), (0, 0)), input_shape=(args.num_frames*2,480, 640, 3)))
+    model.add(Conv3D(24, (3, 3,3), strides=(2, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(36, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    model.add(Conv3D(48, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    model.add(MaxPooling3D(pool_size=(2, 2, 2)))
+    #model.add(Dropout(0.5))
+    model.add(Flatten())
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+    print("test")
+
+    return model
+
+
+
+def Con3d_model2_modif(l2reg,args,num_frames):
+    # Keras NVIDIA type model
+    model = Sequential()
+    #model.add(Lambda(lambda x: x / 255.0 - 0, input_shape=(480, 640, 3)))
+    #model.add(Lambda(lambda x: x / 127.5 - 1.0, input_shape=(480, 640, 3)))
+    model.add(Cropping3D(cropping=((0, 0),(240, 0), (0, 0))))  # trim image to only see section with road
+
+    model.add(Conv3D(24, (5,5, 5), strides=(2, 2,2), activation='relu', use_bias=True, kernel_initializer='glorot_normal',
+                     bias_initializer='zeros', input_shape=(num_frames, 480, 640, 3)))
+    model.add(Conv3D(36, (3,3, 3), strides=(2, 2,2), activation='relu', use_bias=True, kernel_initializer='glorot_normal',
+                     bias_initializer='zeros'))
+    model.add(Conv3D(48, (3,3, 3), strides=(2, 2,2), activation='relu', use_bias=True, kernel_initializer='glorot_normal',
+                     bias_initializer='zeros'))
+    model.add(Conv3D(64, (3,3, 3),activation='relu', use_bias=True, kernel_initializer='glorot_normal',
+                     bias_initializer='zeros'))
+    model.add(Conv3D(64, (3,3, 3), activation='relu', use_bias=True, kernel_initializer='glorot_normal',
+                     bias_initializer='zeros'))
+    model.add(Flatten())
+
+    model.add(Dense(1164, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
+                    kernel_regularizer=regularizers.l2(l2reg)))
+    model.add(Dense(100, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
+                    kernel_regularizer=regularizers.l2(l2reg)))
+    model.add(Dense(50, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
+                    kernel_regularizer=regularizers.l2(l2reg)))
+    model.add(Dense(10, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
+                    kernel_regularizer=regularizers.l2(l2reg)))
+    model.add(Dense(1, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
+                    kernel_regularizer=regularizers.l2(l2reg)))
+
+    return model
+
+
 def nvidia_img_sharing_ahead(args):
     """
-    NVIDIA model used
-    Image normalization to avoid saturation and make gradients work better.
-    Convolution: 5x5, filter: 24, strides: 2x2, activation: ELU
-    Convolution: 5x5, filter: 36, strides: 2x2, activation: ELU
-    Convolution: 5x5, filter: 48, strides: 2x2, activation: ELU
-    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
-    Convolution: 3x3, filter: 64, strides: 1x1, activation: ELU
-    Drop out (0.5)
-    Fully connected: neurons: 100, activation: ELU
-    Fully connected: neurons: 50, activation: ELU
-    Fully connected: neurons: 10, activation: ELU
-    Fully connected: neurons: 1 (output)
-    # the convolution layers are meant to handle feature engineering
-    the fully connected layer for predicting the steering angle.
-    dropout avoids overfitting
-    ELU(Exponential linear unit) function takes care of the Vanishing gradient problem.
+
     """
     model = Sequential()
     #model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(480, 640, 3)))
     #model.add(Cropping2D(cropping=((240, 0), (0, 0))))  # trim image to only see section with road
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(2*args.num_frames,480, 640, 3)))
+
+    model.add(TimeDistributed(Conv2D(24, (5, 5),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(5, 4),
+                                     padding='valid'), input_shape=(2 * args.num_frames, 480, 640, 3)))
+    model.add(TimeDistributed(Conv2D(32, (5, 5),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(3, 2),
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(48, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(1, 2),
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(64, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(128, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(1, 2),
+                                     padding='valid')))
+    model.add(Dropout(0.5))
+    model.add(TimeDistributed(Flatten()))
+
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+
+    return model
+def nvidia_img_sharing_ahead2(args):
+    """
+
+    """
+    model = Sequential()
+    #model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(480, 640, 3)))
+    #model.add(Cropping2D(cropping=((240, 0), (0, 0))))  # trim image to only see section with road
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(2*args.num_frames,480, 640, 3)))
+    model.add(Cropping3D(cropping=((0,0),(240, 0), (0, 0))))  # trim image to only see section with road
+
     model.add(TimeDistributed(Conv2D(24, (5, 5),
                                      kernel_initializer='he_normal',
                                      activation='relu',
@@ -586,8 +914,7 @@ def LSTM_multiple_input(args):
         kernel_initializer='he_normal',
         kernel_regularizer=regularizers.l2(1e-3)))
     return model
-def LSTM_img_sharing(args):
-
+def LSTM_multiple_input_v2(args):
     model = Sequential()
 
     #model.add(TimeDistributed(Lambda(lambda x: x / 127.5 - 1.0), input_shape=(args.num_frames, 480, 640, 3)))
@@ -596,6 +923,50 @@ def LSTM_img_sharing(args):
                                      activation='relu',
                                      strides=(5, 4),
                                      padding='valid'), input_shape=(args.num_frames, 480, 640, 3)))
+    model.add(TimeDistributed(Conv2D(32, (5, 5),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(3, 2),
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(48, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(1, 2),
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(64, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(128, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(1, 2),
+                                     padding='valid')))
+    model.add(Dropout(0.2))
+    model.add(TimeDistributed(Flatten()))
+    model.add(TimeDistributed(Dense(128, activation='relu')))
+    model.add(BatchNormalization())
+    model.add(LSTM(64, return_sequences=True, implementation=2))
+    #model.add(LSTM(64, return_sequences=True, implementation=2))
+    #model.add(LSTM(64, implementation=2))
+    model.add(Dropout(0.2))
+    model.add(Dense(1,
+        kernel_initializer='he_normal',
+        kernel_regularizer=regularizers.l2(1e-3)))
+    return model
+
+
+def LSTM_img_sharing(args):
+
+    model = Sequential()
+    model.add(Lambda(lambda x: x/255, input_shape=(args.num_frames,240, 640, 1)))
+
+    #model.add(TimeDistributed(Lambda(lambda x: x / 127.5 - 1.0), input_shape=(args.num_frames, 480, 640, 3)))
+    model.add(TimeDistributed(Conv2D(24, (5, 5),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(5, 4),
+                                     padding='valid'), input_shape=(args.num_frames, 240, 640, 3)))
     model.add(TimeDistributed(Conv2D(32, (5, 5),
                                      kernel_initializer='he_normal',
                                      activation='relu',
@@ -626,14 +997,14 @@ def LSTM_img_sharing(args):
     #model.add(Dropout(0.2))
     model.add(Dense(10, activation='relu'))
     model.add(Dense(1))
-    #model.summary()
+    model.summary()
 
 
     return model
 def LSTM_img_sharing_ahead(args):
     ##image sharing
     model = Sequential()
-
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(2*args.num_frames,480, 640, 3)))
     #model.add(TimeDistributed(Lambda(lambda x: x / 127.5 - 1.0), input_shape=(2*args.num_frames, 480, 640, 3)))
     model.add(TimeDistributed(Conv2D(24, (5, 5),
                                      kernel_initializer='he_normal',
@@ -670,8 +1041,79 @@ def LSTM_img_sharing_ahead(args):
     #model.add(Dropout(0.2))
     model.add(Dense(10, activation='relu'))
     model.add(Dense(1))
-    #model.summary()
+    model.summary()
 
+
+    return model
+def LSTM_img_sharing_ahead_v2(args):
+    ##image sharing
+    model = Sequential()
+    model.add(Lambda(lambda x: x / 127.5 - 1.0, input_shape=(2 * args.num_frames, 480, 640, 3)))
+    model.add(Cropping3D(cropping=((0, 0), (240, 0), (0, 0))))  # trim image to only see section with road
+
+    #model.add(TimeDistributed(Lambda(lambda x: x / 127.5 - 1.0), input_shape=(2*args.num_frames, 480, 640, 3)))
+    model.add(TimeDistributed(Conv2D(24, (5, 5),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(5, 4),
+                                     padding='valid'), input_shape=(2*args.num_frames, 480, 640, 3)))
+    model.add(TimeDistributed(Conv2D(32, (5, 5),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(3, 2),
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(48, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(1, 2),
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(64, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     padding='valid')))
+    model.add(TimeDistributed(Conv2D(128, (3, 3),
+                                     kernel_initializer='he_normal',
+                                     activation='relu',
+                                     strides=(1, 2),
+                                     padding='valid')))
+    model.add(Dropout(0.2))
+    model.add(TimeDistributed(Flatten()))
+    model.add(TimeDistributed(Dense(128, activation='relu')))
+    model.add(BatchNormalization())
+    model.add(LSTM(64, return_sequences=True, implementation=2))
+    model.add(Dense(1))
+    model.summary()
+
+
+    return model
+
+
+def Con3d_model_LSTM(args):
+    """
+
+    """
+    model = Sequential()
+    model.add(Lambda(lambda x: x/127.5-1.0, input_shape=(2,args.num_frames,240, 640, 3)))
+    #model.add(Cropping3D(cropping=((0,0), (240, 0), (0, 0))))
+    model.add(TimeDistributed(Conv3D(24, (3, 3,3), strides=(2, 2,2), padding = 'same',activation='relu')))
+    model.add(TimeDistributed(Conv3D(36, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu')))
+    model.add(TimeDistributed(Conv3D(48, (3, 3,3), strides=(1, 2,2), padding = 'same',activation='relu')))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(Conv3D(64, (3, 3,3), activation='relu'))
+    #model.add(MaxPooling3D(pool_size=(2, 2, 2)))
+    #model.add(Dropout(0.5))
+    model.add(TimeDistributed(Flatten()))
+    model.add(LSTM(64, return_sequences=True, implementation=2))
+    model.add(LSTM(64, return_sequences=True, implementation=2))
+    model.add(LSTM(64, implementation=2))
+    #model.add(Dropout(0.2))
+
+    model.add(Dense(100, activation='relu'))
+    model.add(Dense(50, activation='relu'))
+    model.add(Dense(10, activation='relu'))
+    model.add(Dense(1))
+    model.summary()
+    print("test")
 
     return model
 

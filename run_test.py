@@ -6,11 +6,13 @@ import matplotlib.pyplot as plt
 plt.switch_backend('agg')
 matplotlib.use('Agg')
 
+
 #for debugging, allows for reproducible (deterministic) results
 #np.random.seed(0)
 
 
 #to save our model periodically as checkpoints for loading later
+import tensorflow as tf
 from tensorflow.python.keras.callbacks import EarlyStopping, ModelCheckpoint
 from tensorflow.python.keras import optimizers
 from tensorflow.python.keras import backend as K
@@ -19,10 +21,15 @@ resnet50_pre_trained_model,nvidia_model2, nvidia_model_basic2, nvidia_model_tune
 
 from functions import predict, predict_shift, split_dataset_random,angle_loss,split_seq_dataset_groups,generator_seq_dataset_groups
 parser = argparse.ArgumentParser()
-
+from sklearn.utils import shuffle
 import models as models
 import functions as fn
+import numpy as np
 
+config = tf.ConfigProto(allow_soft_placement=True)
+config.gpu_options.allocator_type = 'BFC'
+#config.gpu_options.per_process_gpu_memory_fraction = 0.40
+config.gpu_options.allow_growth = True
 
 #PARSER
 def initparse():
@@ -66,7 +73,7 @@ def loadargs_model(args):
     args.loss = '12'
     args.train_dir = 'Ch2/'
     args.augmentation = False
-    args.batch_size = 64
+    args.batch_size = 16
     args.num_workers = 4
     args.num_epochs = 14
     args.use_gpu = True
@@ -78,8 +85,15 @@ def loadargs_model(args):
     args.mode = 'concat'
     args.window_len=4
     args.greyscale=True
-
-    print(args)
+    args.save_model_steps = 'None'
+    args.num_samples = -1
+    args.num_samples_va=1000
+    args.num_frames=10
+    args.lookahead_window=30
+    args.bad_angles=True
+    args.video_angles=0
+    args.vide_pred = 1
+    #print(args)
 
 #TRIAN FNs
 def train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen):
@@ -293,19 +307,87 @@ def LSTM_img_sharing(args, train_imgs, val_imgs, train_gen, val_gen):
         # predict(model, args.pretrained, args)
 
 def LSTM_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
-
-    # LSTM_img_sharing_ahead
+    # CONV2D_img_sharing_ahead
+    args.lookahead_window = 30
+    args.num_frames = 10
     print("LSTM_img_sharing_ahead")
-    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead2'
-    args.save_model = 'out/mymodelLSTM_img_sharing_ahead2'
-
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead1_f10'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead1f_10'
+    print(args)
     model = models.LSTM_img_sharing_ahead(args)
 
     train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
 
     if args.pretrained != 'None':
-        print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
-        #predict(model, args.pretrained, args)
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+    args.num_frames = 1
+    print("LSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead1_f_1'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead1f_1'
+    print(args)
+    model = models.LSTM_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+    args.num_frames = 5
+    print("LSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead1_f_5'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead1f_5'
+    print(args)
+    model = models.LSTM_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+    args.num_frames = 15
+    print("LSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead1_f_15'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead1f_15'
+    print(args)
+    model = models.LSTM_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+    args.num_frames = 30
+    print("LSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead1_f_30'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead1f_30'
+    print(args)
+    model = models.LSTM_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+
+    args.num_frames = 60
+    print("LSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_ahead1_f_60'
+    args.save_model = 'out/mymodelLSTM_img_sharing_ahead1f_60'
+    print(args)
+    model = models.LSTM_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
 
 def Nvidia_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
 
@@ -335,10 +417,10 @@ def Nvidia_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
         print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
         # predict(model, args.pretrained, args)
 
-
 def Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen):
-    # nvidia_model_basic
 
+
+    """""""""
     args.pretrained = 'out/mymodelnvidia_model_basic'
     args.save_model = 'out/mymodelnvidia_model_basic'
     model = nvidia_model_basic()
@@ -356,21 +438,13 @@ def Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen):
 
     if args.pretrained != 'None':
         predict(model, args.pretrained, args)
-        # nvidia
+        # nvidia_model_basic3
+        
+    # nvidia_model_basic4
 
-    args.pretrained = 'out/mymodelnvidia'
-    args.save_model = 'out/mymodelnvidia'
-    model = nvidia_model(args.l2reg)
-    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
-
-    if args.pretrained != 'None':
-        predict(model, args.pretrained, args)
-
-    # nvidia 2
-
-    args.pretrained = 'out/mymodelnvidia2'
-    args.save_model = 'out/mymodelnvidia2'
-    model = nvidia_model2(args.l2reg)
+    args.pretrained = 'out/mymodelnvidia_model_basic4'
+    args.save_model = 'out/mymodelnvidia_model_basic4'
+    model = models.nvidia_model_basic4()
     train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
 
     if args.pretrained != 'None':
@@ -399,6 +473,19 @@ def Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen):
 
     if args.pretrained != 'None':
         predict(model, args.pretrained, args)
+        
+    """""""""
+    print(args)
+    args.pretrained = '1img/mymodelnvidia_model_basic'+ str(args.lookahead_window) +str(args.num_frames)
+    args.save_model = '1img/mymodelnvidia_model_basic'+ str(args.lookahead_window) +str(args.num_frames)
+    model = models.nvidia_model_basic_cropped()
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_just_ahead_nvidia(model, args.pretrained, args)
+
+
+
 
 def Transfer_Learning_test(args, train_imgs, val_imgs, train_gen, val_gen):
     # resnet50_pre_trained_model
@@ -472,53 +559,391 @@ def Data_sharing_test(args, train_imgs, val_imgs, train_gen, val_gen):
         predict_shift(model, args.pretrained, args)
 
 
+def CONv3D_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
+
+    # CONV3D_img_sharing_ahead
+    print("Conv3D_img_sharing_ahead")
+    args.pretrained = 'out/mymodelConv3D_img_sharing_ahead1'
+    args.save_model = 'out/mymodelConv3D_img_sharing_ahead1'
+
+    model = models.Con3d_model(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+
+        fn.predict_temporal(model, args.pretrained, args)
+        #print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+        # CONV3D_img_sharing_ahead
+    print("Conv3D_img_sharing_ahead2")
+    args.pretrained = 'out/mymodelConv3D_img_sharing_ahead22'
+    args.save_model = 'out/mymodelConv3D_img_sharing_ahead22'
+
+
+    model = models.Con3d_model2(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+        # CONV3D_img_sharing_ahead
+    print("Conv3D_img_sharing_ahead3")
+    args.pretrained = 'out/mymodelConv3D_img_sharing_ahead33'
+    args.save_model = 'out/mymodelConv3D_img_sharing_ahead33'
+
+    model = models.Con3d_model3(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+        # CONV3D_img_sharing_ahead
+    print("Conv3D_img_sharing_ahead4")
+    args.pretrained = 'out/mymodelConv3D_img_sharing_ahead44'
+    args.save_model = 'out/mymodelConv3D_img_sharing_ahead44'
+
+    model = models.Con3d_model4(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+def CONv2D_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
+    # CONV2D_img_sharing_ahead
+    print("Conv2D_img_sharing_ahead")
+    args.pretrained = 'out/mymodelConv2D_img_sharing_ahead1'
+    args.save_model = 'out/mymodelConv2D_img_sharing_ahead1'
+    print(args)
+    model = models.nvidia_img_sharing_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+    print("Conv2D_img_sharing_ahead2")
+    args.pretrained = 'out/mymodelConv2D_img_sharing_ahead2'
+    args.save_model = 'out/mymodelConv2D_img_sharing_ahead2'
+    print(args)
+    model = models.nvidia_img_sharing_ahead2(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_temporal(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+def CONv3D_LSTMimg_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
+
+    # CONV3D_img_sharing_ahead
+    print("Conv3DLSTM_img_sharing_ahead")
+    args.pretrained = 'out/mymodelConv3DLSTM_img_sharing_ahead1'
+    args.save_model = 'out/mymodelConv3DLSTM_img_sharing_ahead1'
+
+    model = models.Con3d_model_LSTM(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+
+        fn.predict_temporal_timedistrib(model, args.pretrained, args)
+        #print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+def CONv3D_img_sharing_Just_ahead(args, train_imgs, val_imgs, train_gen, val_gen):
+
+    print(args)
+    # LSTM_img_sharing_Just_ahead
+    print("LSTM_img_sharing_Just_ahead")
+    args.pretrained = 'out/mymodelLSTM_img_sharing_Just_ahead'
+    args.save_model = 'out/mymodelLSTM_img_sharing_Just_ahead'
+
+    model = models.LSTM_img_sharing(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_just_ahead(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+    # CONv3D_img_sharing_Just_ahead
+    print("CONv3D_img_sharing_Just_ahead")
+    args.pretrained = 'out/mymodelCONv3D_img_sharing_Just_ahead'
+    args.save_model = 'out/mymodelCONv3D_img_sharing_Just_ahead'
+
+    model = models.Con3d_model_just_ahead(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+
+        fn.predict_just_ahead(model, args.pretrained, args)
+        #print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+def CONv2D_img_diff(args, train_imgs, val_imgs, train_gen, val_gen):
+
+    print(args)
+    # CONv2D_img_diff
+    print("CONv2D_img_diff")
+    args.pretrained = 'out/mymodelCONv2D_img_diff22' + str(args.lookahead_window) +str(args.num_frames)
+    args.save_model = 'out/mymodelCONv2D_img_diff22' + str(args.lookahead_window) +str(args.num_frames)
+
+    model = models.nvidia_model_diff(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+        fn.predict_diff(model, args.pretrained, args)
+        # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+def CONv2D_img_concat(args, train_imgs, val_imgs, train_gen, val_gen):
+
+    print(args)
+    # CONv2D_img_concat
+    print("CONv2D_img_concat")
+    args.pretrained = 'out/mymodelCONv2D_img_concat22' + str(args.lookahead_window) +str(args.num_frames)
+    args.save_model = 'out/mymodelCONv2D_img_concat22'+ str(args.lookahead_window) +str(args.num_frames)
+
+    model = models.nvidia_model_concat(args)
+
+    train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if args.pretrained != 'None':
+
+        fn.predict_diff(model, args.pretrained, args)
+        #print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
+
+
 def main(args):
     loadargs_model(args)
     # for debug reduces number of samples
     args.num_samples = -1
-    args.num_samples_va=1000
-    args.save_model_steps='None'
-    args.num_frames=10
-    args.lookahead_window=30
+    args.num_samples_va=50
+    args.num_frames=5
+    args.lookahead_window=5
+    args.bad_angles=False
+    args.angles_degree=False
+    args.use_more_big_angles=False
+    args.video_angles=1
+    args.vide_pred = 0
+    args.batch_size = 32
+    args.num_epochs = 14
+
+    test_nvidia=0
+    test_nvidia_future_img=1
+    made_video=0
+    test_predictions=0
+    test_conv3d=0
+    test_con2d_ahead=0
+    test_lstm=0
+    test_conv3d_lstm =0
+    test_conv3d_just_ahead=0
+    test_conv2d_diff=0
+    test_lstm_just_ahead=0
+
+    print(args)
+    if test_nvidia==1:
+        # Basic dataset
+        train_imgs, val_imgs = split_dataset_random(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
+
+        train_gen = fn.generator_dataset_random(train_imgs, args)
+        val_gen = fn.generator_dataset_random(val_imgs, args)
+
+        Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if test_nvidia_future_img==1:
+        # Basic dataset
+        for i in range(0,100,5):
+            args.lookahead_window=i
+            train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+            if args.num_samples > 0:
+                train_imgs = train_imgs[:args.num_samples]
+                val_imgs = val_imgs[:args.num_samples_va]
+
+            train_gen = fn.generator_dataset_just_ahead(train_imgs[:, 1], train_imgs[:, 0], args)
+            val_gen = fn.generator_dataset_just_ahead(train_imgs[:, 1], train_imgs[:, 0], args)
+
+            Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen)
+
+
+    if test_con2d_ahead==1:
+        # CONV2d
+        args.num_frames = 20
+        train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
+
+        train_gen = fn.generator_seq_dataset_chunks_ahead(train_imgs[:, 1], train_imgs[:, 0], args)
+        val_gen = fn.generator_seq_dataset_chunks_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
+
+        CONv2D_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if test_lstm == 1:
+        # LSTM
+        args.num_frames = 10
+        train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
+
+        train_gen = fn.generator_seq_dataset_chunks_ahead(train_imgs[:, 1], train_imgs[:, 0], args)
+        val_gen = fn.generator_seq_dataset_chunks_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
+
+        LSTM_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen)
 
     """""
-    # Basic dataset
-    train_imgs, val_imgs = split_dataset_random(args)
-    if args.num_samples > 0:
-        train_imgs = train_imgs[:args.num_samples]
-        val_imgs = val_imgs[:args.num_samples_va]
-
-    train_gen = generator(train_imgs, args)
-    val_gen = generator(val_imgs, args)
-
-
-
-    # Shift dataset 2images gray
-    train_imgs, val_imgs = split_seq_dataset_groups(args)
-    args.mode = 'concat'
-    train_gen = generator_seq_dataset_groups(train_imgs, args)
-    val_gen = generator_seq_dataset_groups(val_imgs, args)
-
-
-    #LSTM
-    args.num_frames = 20
-    train_imgs, val_imgs = fn.split_seq_dataset_chunks(args)
-    train_gen = fn.generator_seq_dataset_chunks(train_imgs[:, 1], train_imgs[:, 0], args, scale=1,
-                                                      random_flip=False)
-    val_gen = fn.generator_seq_dataset_chunks(val_imgs[:, 1], val_imgs[:, 0], args, scale=1, random_flip=False)
-
-    LSTM_test(args, train_imgs, val_imgs, train_gen, val_gen)
+        # Shift dataset 2images gray
+        train_imgs, val_imgs = split_seq_dataset_groups(args)
+        args.mode = 'concat'
+        train_gen = generator_seq_dataset_groups(train_imgs, args)
+        val_gen = generator_seq_dataset_groups(val_imgs, args)
     
-   
+    
+        #LSTM
+        args.num_frames = 20
+        train_imgs, val_imgs = fn.split_seq_dataset_chunks(args)
+        train_gen = fn.generator_seq_dataset_chunks(train_imgs[:, 1], train_imgs[:, 0], args, scale=1,
+                                                          random_flip=False)
+        val_gen = fn.generator_seq_dataset_chunks(val_imgs[:, 1], val_imgs[:, 0], args, scale=1, random_flip=False)
+    
+        LSTM_test(args, train_imgs, val_imgs, train_gen, val_gen)
+        
+           args.num_frames = 5
+        train_imgs, val_imgs = fn.split_dataset_random(args)
+    
+        train_gen = fn.generator_dataset_random(train_imgs,args)
+        val_gen = fn.generator_dataset_random(val_imgs,args)
+    
+        Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen)
+    
+    """""
+    if test_conv3d==1:
+        # CONV3d
+        args.num_frames = 5
+        train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
 
-"""""
-    args.num_frames = 5
-    train_imgs, val_imgs = fn.split_dataset_random(args)
+        train_gen = fn.generator_seq_dataset_chunks_ahead(train_imgs[:, 1], train_imgs[:, 0],args)
+        val_gen = fn.generator_seq_dataset_chunks_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
 
-    train_gen = fn.generator_dataset_random(train_imgs,args)
-    val_gen = fn.generator_dataset_random(val_imgs,args)
+        CONv3D_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen)
 
-    Nvidia_test(args, train_imgs, val_imgs, train_gen, val_gen)
+    if test_conv3d_lstm == 1:
+        # CONV3d_LSTM
+        args.num_frames = 10
+        args.lookahead_window = 15
+        train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
+
+        train_gen = fn.generator_seq_dataset_chunks_ahead_time(train_imgs[:, 1], train_imgs[:, 0], args)
+        val_gen = fn.generator_seq_dataset_chunks_ahead_time(val_imgs[:, 1], val_imgs[:, 0], args)
+
+        CONv3D_LSTMimg_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if test_conv3d_just_ahead==1:
+        # CONV3d
+        args.num_frames = 25
+        train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
+
+        train_gen = fn.generator_seq_dataset_just_ahead(train_imgs[:, 1], train_imgs[:, 0],args)
+        val_gen = fn.generator_seq_dataset_just_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
+
+        CONv3D_img_sharing_Just_ahead(args, train_imgs, val_imgs, train_gen, val_gen)
+
+
+    if test_conv2d_diff==1:
+
+        args.lookahead_window = 15
+        for i in range(2,22,4):
+
+            args.num_frames = i
+            train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+            if args.num_samples > 0:
+                train_imgs = train_imgs[:args.num_samples]
+                val_imgs = val_imgs[:args.num_samples_va]
+
+
+
+            args.mode = 'concat'
+
+            train_gen = fn.generator_seq_dataset_diff_ahead(train_imgs[:, 1], train_imgs[:, 0], args)
+            val_gen = fn.generator_seq_dataset_diff_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
+
+            CONv2D_img_concat(args, train_imgs, val_imgs, train_gen, val_gen)
+
+            args.mode = 'diff'
+
+            train_gen = fn.generator_seq_dataset_diff_ahead(train_imgs[:, 1], train_imgs[:, 0], args)
+            val_gen = fn.generator_seq_dataset_diff_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
+
+            CONv2D_img_diff(args, train_imgs, val_imgs, train_gen, val_gen)
+
+
+    if made_video==1:
+        args.pretrained = "nvidia_model_basic_all_angles"
+        model = models.nvidia_model_basic()
+        fn.create_video_pre_process(args,model)
+
+    if test_predictions==1:
+        # args.bad_angles = False
+        # args.pretrained="nvidia_model_basic_all_angles"
+        # model=models.nvidia_model_basic()
+        # predict(model, args.pretrained, args)
+        #
+        # args.pretrained="nvidia_model_basic_good_angles"
+        # model=models.nvidia_model_basic()
+        # predict(model, args.pretrained, args)
+        """
+        args.pretrained = "mymodelConv3D_img_sharing_ahead"
+        args.num_frames = 10
+        args.lookahead_window = 15
+        model=models.Con3d_model(args)
+        fn.predict_temporal(model, args.pretrained, args)
+        
+                args.pretrained = "mymodelCONv2D_img_concat22"
+        args.mode = 'concat'
+        args.num_frames = 2
+        model = models.nvidia_model_concat(args)
+        rmse = []
+        index=[]
+        for i in range(0,100,5):
+            args.lookahead_window = i
+
+            rmsenum= fn.predict_diff(model, args.pretrained, args)
+
+            rmse.append(rmsenum)
+            index.append(i)
+        
+        rmse=np.array(rmse)
+        index=np.array(index)
+        plt.figure(figsize=(16, 9))
+        plt.plot(index,rmse, label='RSME vs dt')
+
+        plt.legend()
+        plt.savefig('diferent_dt.png')
+
+           """
+
+
+
+
 
 if __name__ == '__main__':
   initparse()

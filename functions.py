@@ -6,7 +6,6 @@ import matplotlib
 import keras
 import numpy as np
 import os
-import scipy.ndimage
 import random
 import keras.backend as K
 matplotlib.use('agg')
@@ -17,53 +16,25 @@ matplotlib.use('Agg')
 
 print ("Import libs")
 from sklearn.utils import shuffle
-
 #to split out training and testing data
 from sklearn.model_selection import train_test_split
 from tensorflow.python.keras import backend as K
 from PIL import Image, ImageOps
 
-
-
+radian_to_degree= 57.2958
 IMG_EXTENSIONS = [
     '.jpg', '.JPG', '.jpeg', '.JPEG',
     '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP',
 ]
-
-#IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_CHANNELS = 66, 200, 3
 img_shape = (640, 480)
 IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_CHANNELS = 480, 640, 3
 INPUT_SHAPE = (IMAGE_HEIGHT, IMAGE_WIDTH, IMAGE_CHANNELS)
 
 
 # main functions
-def preprocess(samples, steer_threshold, drop_low_angles):
-    samples = np.array(samples, dtype = object)
-    print("Number of samples before dropping low steering angles: {}".format(samples.shape[0]))
-    #index1 = np.where((samples[:, 1] < 0) == True)[0]
-    #print(index1)
-    index = np.where( (np.abs(samples[:,1]) < steer_threshold) == True)[0]
-
-    if drop_low_angles == False:
-        rows = [i for i in index if np.random.randint(10) < 9]
-    else:
-        rows = index
-    samples = np.delete(samples, rows, 0)
-    print("Removed %s rows with low steering"%(len(rows)))
-    print("Number of samples after dropping low steering angles: {}".format(samples.shape[0]))
-
-    return samples
-def correct_steering(angle, ix, steer_correction):
-    if ix == 1: #left
-        return angle + steer_correction
-    elif ix == 2: #right
-        return angle - steer_correction
-    else:
-        return angle
-
-
-def split_dataset_random(args):
+def load_images(args):
     images = []
+    # From test images Ch2/
     with open('Ch2/interpolated.csv') as csvfile:
         if args.direction == 'center':
             _directions = ['center']
@@ -90,7 +61,246 @@ def split_dataset_random(args):
                     ix = 1
                 else:
                     ix = 2
-                angle = correct_steering(angle, ix, args.steer_correction)
+                item = (path, angle, speed, torque, ix, 0)
+                images.append(item)
+    return np.array(images)
+def preprocess(samples, steer_threshold, drop_low_angles):
+    samples = np.array(samples, dtype = object)
+    print("Number of samples before dropping low steering angles: {}".format(samples.shape[0]))
+    #index1 = np.where((samples[:, 1] < 0) == True)[0]
+    #print(index1)
+    index = np.where( (np.abs(samples[:,1]) < steer_threshold) == True)[0]
+
+    if drop_low_angles == False:
+        rows = [i for i in index if np.random.randint(10) < 9]
+    else:
+        rows = index
+    samples = np.delete(samples, rows, 0)
+    print("Removed %s rows with low steering"%(len(rows)))
+    print("Number of samples after dropping low steering angles: {}".format(samples.shape[0]))
+
+    return samples
+def crop(image):
+    """
+    Crop the image
+    """
+    return image[240:480, :, :] # remove the sky and the car front
+def preprocess_image(image):
+    image=crop(image)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    #image=cv2.equalizeHist(image)
+
+    #img_yuv = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
+    # equalize the histogram of the Y channel
+    #img_yuv[:, :, 0] = cv2.equalizeHist(img_yuv[:, :, 0])
+    # convert the YUV image back to RGB format
+    #image = cv2.cvtColor(img_yuv, cv2.COLOR_YUV2BGR)
+
+    #image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+    # img = ((img - (255.0 / 2)) / 255.0)
+    return image
+def correct_steering(angle, ix, steer_correction):
+    if ix == 1: #left
+        return angle + steer_correction
+    elif ix == 2: #right
+        return angle - steer_correction
+    else:
+        return angle
+
+def create_video(args,model=0):
+    images = []
+    images_count=0
+    cap = cv2.VideoCapture(0)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    if args.video_angles == 1:
+        out = cv2.VideoWriter('output_badangles.avi', fourcc, 5.0, (640, 480))
+    else:
+        out = cv2.VideoWriter('output_allangles.avi', fourcc, 15.0, (640, 480))
+    with open('Ch2/interpolated.csv') as csvfile:
+        if args.direction == 'center':
+            _directions = ['center']
+        elif args.direction == 'left':
+            _directions = ['left']
+        elif args.direction == 'left':
+            _directions = ['right']
+        else:
+            _directions = ['center', 'left', 'right']
+
+        reader = csv.reader(csvfile)
+        headers = next(reader)
+        for row in reader:
+
+            d = row[5].split('/')[0]
+            path = 'Ch2/' + d + '/' + row[5].split('/')[1]
+            angle = float(row[6])
+            torque = float(row[7])
+            speed = float(row[8])
+
+            if d in _directions:
+                if d == 'center':
+                    ix = 0
+                elif d == 'left':
+                    ix = 1
+                else:
+                    ix = 2
+                #if images_count > 100:
+                #    break
+                images_count = images_count + 1
+
+                #angle = correct_steering(angle, ix, args.steer_correction)
+                #item = (path, angle, speed, torque, ix, 0)
+                #img = pil_loader(path)
+                #frame = np.asarray(img)
+                #frame=np.load(path)
+                if args.video_angles==1:
+
+                    if angle*57.2958 <-30  or  angle*57.2958 >30  or angle==0  :
+                        frame=cv2.imread(path)
+                        if args.vide_pred==1:
+                            angle_pred=model.predict(frame.reshape(-1, 480, 640, 3))[0][0]
+                            cv2.putText(frame, str(angle_pred*57.2958), (300, 120), font, 1.0, (255, 0, 0), 3)
+                        cv2.putText(frame, str(angle), (300,50), font, 1.0, (0, 0, 255), 3)
+                        cv2.putText(frame, str(angle*57.2958), (300, 80), font, 1.0, (0, 0, 255), 3)
+                        ##frame =cv2.imread(path)
+                        out.write(frame)
+
+                else:
+                    frame = cv2.imread(path)
+                    if args.vide_pred == 1:
+                        angle_pred = model.predict(frame.reshape(-1, 480, 640, 3))[0][0]
+                        cv2.putText(frame, str(angle_pred * 57.2958), (300, 120), font, 1.0, (255, 0, 0), 3)
+                    cv2.putText(frame, str(angle), (300, 50), font, 1.0, (0, 0, 255), 3)
+                    cv2.putText(frame, str(angle * 57.2958), (300, 80), font, 1.0, (0, 0, 255), 3)
+                    ##frame =cv2.imread(path)
+                    out.write(frame)
+
+                ##cv2.imshow('frame', frame)
+
+    print("Ended Video")
+    # Release everything if job is finished
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
+    return
+def create_video_pre_process(args,model=0):
+    images = []
+    images_count=0
+    cap = cv2.VideoCapture(0)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    # Define the codec and create VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    if args.video_angles == 1:
+        out = cv2.VideoWriter('output_badangles.avi', fourcc, 5.0, (640, 240),0)
+    else:
+        out = cv2.VideoWriter('output_allangles.avi', fourcc, 15.0, (640, 240))
+    with open('Ch2/interpolated.csv') as csvfile:
+        if args.direction == 'center':
+            _directions = ['center']
+        elif args.direction == 'left':
+            _directions = ['left']
+        elif args.direction == 'left':
+            _directions = ['right']
+        else:
+            _directions = ['center', 'left', 'right']
+
+        reader = csv.reader(csvfile)
+        headers = next(reader)
+        for row in reader:
+
+            d = row[5].split('/')[0]
+            path = 'Ch2/' + d + '/' + row[5].split('/')[1]
+            angle = float(row[6])
+            torque = float(row[7])
+            speed = float(row[8])
+
+            if d in _directions:
+                if d == 'center':
+                    ix = 0
+                elif d == 'left':
+                    ix = 1
+                else:
+                    ix = 2
+                #if images_count > 100:
+                #    break
+                images_count = images_count + 1
+
+                #angle = correct_steering(angle, ix, args.steer_correction)
+                #item = (path, angle, speed, torque, ix, 0)
+                #img = pil_loader(path)
+                #frame = np.asarray(img)
+                #frame=np.load(path)
+                if args.video_angles==1:
+
+                    if angle*57.2958 <-30  or  angle*57.2958 >30  or angle==0  :
+                        frame=cv2.imread(path)
+                        frame=preprocess_image(frame)
+
+                        if args.vide_pred==1:
+                            angle_pred=model.predict(frame.reshape(-1, 240, 640, 3))[0][0]
+                            cv2.putText(frame, str(angle_pred*57.2958), (300, 70), font, 1.0, (255, 0, 0), 3)
+                        #cv2.putText(frame, str(angle), (300,10), font, 1.0, (0, 0, 255), 3)
+                        #cv2.putText(frame, str(angle*57.2958), (300, 40), font, 1.0, (0, 0, 255), 3)
+                        ##frame =cv2.imread(path)
+                        out.write(frame)
+
+                else:
+                    frame = cv2.imread(path)
+                    if args.vide_pred == 1:
+                        angle_pred = model.predict(frame.reshape(-1, 480, 640, 3))[0][0]
+                        cv2.putText(frame, str(angle_pred * 57.2958), (300, 120), font, 1.0, (255, 0, 0), 3)
+                    cv2.putText(frame, str(angle), (300, 50), font, 1.0, (0, 0, 255), 3)
+                    cv2.putText(frame, str(angle * 57.2958), (300, 80), font, 1.0, (0, 0, 255), 3)
+                    ##frame =cv2.imread(path)
+                    out.write(frame)
+
+                ##cv2.imshow('frame', frame)
+
+    print("Ended Video")
+    # Release everything if job is finished
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
+    return
+
+def split_dataset_random(args):
+    images = []
+    with open('Ch2/interpolated.csv') as csvfile:
+        if args.direction == 'center':
+            _directions = ['center']
+        elif args.direction == 'left':
+            _directions = ['left']
+        elif args.direction == 'left':
+            _directions = ['right']
+        else:
+            _directions = ['center', 'left', 'right']
+
+        reader = csv.reader(csvfile)
+        headers = next(reader)
+        for row in reader:
+            d = row[5].split('/')[0]
+            path = 'Ch2/' + d + '/' + row[5].split('/')[1]
+            angle = float(row[6])
+            torque = float(row[7])
+            speed = float(row[8])
+
+            if args.bad_angles==True:
+                if angle==0:
+                    continue
+                if angle*57 > 50:
+                    continue
+                if angle*57 < -50:
+                    continue
+
+            if d in _directions:
+                if d == 'center':
+                    ix = 0
+                elif d == 'left':
+                    ix = 1
+                else:
+                    ix = 2
+                #angle = correct_steering(angle, ix, args.steer_correction)
                 item = (path, angle, speed, torque, ix, 0)
                 images.append(item)
                 if args.augmentation:
@@ -135,6 +345,33 @@ def generator_dataset_random(samples, args):
             X_train = np.array(images)
             y_train = np.array(y)
             yield shuffle(X_train, y_train)
+def generator_dataset_just_ahead(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(240, 640,3)):
+
+    batch_features = np.zeros((args.batch_size, *input_shape))
+    batch_labels = np.zeros((args.batch_size, 1))
+    num_samples=len(labels)-args.lookahead_window -1
+    value_range = np.arange(0,len(labels)-args.lookahead_window-1)
+    value_shuffle=shuffle(value_range)
+    while True:
+        #next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
+        for offset in range(0, num_samples, args.batch_size):
+            index_to_batch=value_shuffle[offset:offset+args.batch_size]
+            for i, idx in enumerate(index_to_batch):
+
+                y = float(labels[idx])
+
+                img_name=index_values[idx+args.lookahead_window]
+                image = cv2.imread(img_name)
+                #image = np.asarray(image)
+                #image=preprocess_image(image)
+                image=crop(image)
+                image = np.asarray(image)
+
+                batch_features[i, :] = image
+                batch_labels[i] =y
+
+            #batch_features.reshape((args.batch_size, args.num_frames, *input_shape))
+            yield shuffle(batch_features,batch_labels)
 
 
 def split_seq_dataset_chunks(args):
@@ -181,6 +418,66 @@ def split_seq_dataset_chunks(args):
         val_imgs.extend(chunk[train_chunk:])
 
     return np.array(train_imgs), np.array(val_imgs)
+def split_seq_dataset_simple(args):
+    images = []
+    with open('Ch2/interpolated.csv') as csvfile:
+        if args.direction == 'center':
+            _directions = ['center']
+        elif args.direction == 'left':
+            _directions = ['left']
+        elif args.direction == 'left':
+            _directions = ['right']
+        else:
+            _directions = ['center', 'left', 'right']
+
+        reader = csv.reader(csvfile)
+        headers = next(reader)
+        for row in reader:
+            d = row[5].split('/')[0]
+            path = 'Ch2/' + d + '/' + row[5].split('/')[1]
+            angle = float(row[6])
+            torque = float(row[7])
+            speed = float(row[8])
+
+            if args.bad_angles == True:
+                if angle == 0:
+                    continue
+                if angle * 57 > 50:
+                    continue
+                if angle * 57 < -50:
+                    continue
+
+
+            if args.angles_degree == True:
+                angle=angle*radian_to_degree
+
+            if d in _directions:
+                if d == 'center':
+                    ix = 0
+                elif d == 'left':
+                    ix = 1
+                else:
+                    ix = 2
+
+                if args.use_more_big_angles == True:
+                    if angle * 57 > 30 or angle * 57 < -30 :
+                        for i in range(0,5):
+                            item = (path, angle, speed, torque, ix, 0)
+                            images.append(item)
+                item = (path, angle, speed, torque, ix, 0)
+                images.append(item)
+
+    images_len = int(len(images))
+    train_chunk = int(images_len * 0.8)
+    print(images_len, train_chunk)
+
+    train_imgs = []
+    val_imgs = []
+
+    train_imgs.extend(images[:train_chunk])
+    val_imgs.extend(images[train_chunk:])
+
+    return np.array(train_imgs), np.array(val_imgs)
 def generator_seq_dataset_chunks(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(480, 640, 3)):
     batch_features = np.zeros((args.batch_size, args.num_frames, *input_shape))
     batch_labels = np.zeros((args.batch_size, 1))
@@ -201,50 +498,179 @@ def generator_seq_dataset_chunks(labels, index_values, args, scale=1.0, random_f
                     if flip_bit == 1:
                         image = np.flip(image, 1)
                         y = y * -1
-                image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
-                image = ((image - (255.0 / 2)) / 255.0)
+                #image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+                #image = ((image - (255.0 / 2)) / 255.0)
                 batch_features[i, j, :] = image
                 batch_labels[i] = y * scale
 
 
         yield batch_features, batch_labels
-
 def generator_seq_dataset_chunks_ahead(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(480, 640, 3)):
 
     batch_features = np.zeros((args.batch_size, 2*args.num_frames, *input_shape))
     batch_labels = np.zeros((args.batch_size, 1))
-    value_range = np.arange(0,len(labels)-args.num_frames-1)
+    num_samples=len(labels)-2*args.num_frames - args.lookahead_window-1
+    value_range = np.arange(0,len(labels)-2*args.num_frames - args.lookahead_window-1)
+    value_shuffle=shuffle(value_range)
     while True:
-        next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
-        for i, idx in enumerate(next_indexes):
-            for j in range(args.num_frames):
-                y = labels[idx+j]
+        #next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
+        for offset in range(0, num_samples, args.batch_size):
+            index_to_batch=value_shuffle[offset:offset+args.batch_size]
+            for i, idx in enumerate(index_to_batch):
+                for j in range(args.num_frames):
+                    y = float(labels[idx+j])
 
-                img_name=index_values[idx+j]
+                    img_name=index_values[idx+j]
+                    image = cv2.imread(img_name)
+                    image = np.asarray(image)
+
+                    if random_flip:
+                        flip_bit = random.randint(0, 1)
+                        if flip_bit == 1:
+                            image = np.flip(image, 1)
+                            y = y * -1
+                    #image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+                    #image = ((image - (255.0 / 2)) / 255.0)
+                    batch_features[i, j, :] = image
+                    batch_labels[i] = y
+
+                for j in range(args.num_frames):
+                    img_name_ahead=index_values[idx+j+args.lookahead_window]
+                    image_ahead = cv2.imread(img_name_ahead)
+                    image_ahead = np.asarray(image_ahead)
+                    #image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                    #image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                    batch_features[i, args.num_frames+j, :] = image_ahead
+
+
+            yield batch_features, batch_labels
+
+
+def generator_seq_dataset_chunks_ahead_time(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(240, 640, 3)):
+    batch_features = np.zeros((args.batch_size, 2, args.num_frames, *input_shape))
+    batch_labels = np.zeros((args.batch_size, 1))
+    num_samples = len(labels) - 2 * args.num_frames - args.lookahead_window - 1
+    value_range = np.arange(0, len(labels) - 2 * args.num_frames - args.lookahead_window - 1)
+    value_shuffle = shuffle(value_range)
+    while True:
+        # next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
+        for offset in range(0, num_samples, args.batch_size):
+            index_to_batch = value_shuffle[offset:offset + args.batch_size]
+            for i, idx in enumerate(index_to_batch):
+                for j in range(args.num_frames):
+                    y = float(labels[idx + j])
+
+                    img_name = index_values[idx + j]
+                    image = cv2.imread(img_name)
+                    image=crop(image)
+                    image = np.asarray(image)
+
+                    if random_flip:
+                        flip_bit = random.randint(0, 1)
+                        if flip_bit == 1:
+                            image = np.flip(image, 1)
+                            y = y * -1
+                    # image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+                    # image = ((image - (255.0 / 2)) / 255.0)
+                    batch_features[i,0, j, :] = image
+                    batch_labels[i] = y
+
+                for j in range(args.num_frames):
+                    img_name_ahead = index_values[idx + j + args.lookahead_window]
+                    image_ahead = cv2.imread(img_name_ahead)
+                    image_ahead = crop(image_ahead)
+                    image_ahead = np.asarray(image_ahead)
+                    # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                    # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                    batch_features[i,1,j, :] = image_ahead
+
+            yield batch_features, batch_labels
+
+
+def generator_seq_dataset_just_ahead(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(240, 640,1)):
+
+    batch_features = np.zeros((args.batch_size, args.num_frames, *input_shape))
+    batch_labels = np.zeros((args.batch_size, 1))
+    num_samples=len(labels)-args.num_frames -1
+    value_range = np.arange(0,len(labels)-args.num_frames-1)
+    value_shuffle=shuffle(value_range)
+    while True:
+        #next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
+        for offset in range(0, num_samples, args.batch_size):
+            index_to_batch=value_shuffle[offset:offset+args.batch_size]
+            for i, idx in enumerate(index_to_batch):
+                for j in range(args.num_frames):
+                    y = float(labels[idx+j])
+
+                    img_name=index_values[idx+j]
+                    image = cv2.imread(img_name)
+                    #image = np.asarray(image)
+                    image=preprocess_image(image)
+                    image = np.asarray(image)
+
+                    image=image.reshape(*input_shape)
+                    if random_flip:
+                        flip_bit = random.randint(0, 1)
+                        if flip_bit == 1:
+                            image = np.flip(image, 1)
+                            y = y * -1
+                    #image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+                    #image = ((image - (255.0 / 2)) / 255.0)
+                    batch_features[i, j, :] = image
+                batch_labels[i] =float(labels[idx])
+
+            #batch_features.reshape((args.batch_size, args.num_frames, *input_shape))
+            yield batch_features, batch_labels
+def generator_seq_dataset_diff_ahead(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(240, 640, 3)):
+
+    batch_features = np.zeros((args.batch_size, 240*(args.num_frames), 640, 3))
+    batch_labels = np.zeros((args.batch_size, 1))
+    num_samples=len(labels)-args.num_frames - args.lookahead_window-1
+    value_range = np.arange(0,len(labels)-args.num_frames - args.lookahead_window-1)
+    value_shuffle=shuffle(value_range)
+    while True:
+        #next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
+        for offset in range(0, num_samples, args.batch_size):
+            index_to_batch=value_shuffle[offset:offset+args.batch_size]
+            for i, idx in enumerate(index_to_batch):
+
+                y = float(labels[idx])
+                img_name = index_values[idx]
                 image = cv2.imread(img_name)
+                image = crop(image)
                 image = np.asarray(image)
+                concat_image=image
 
-                if random_flip:
-                    flip_bit = random.randint(0, 1)
-                    if flip_bit == 1:
-                        image = np.flip(image, 1)
-                        y = y * -1
-                image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
-                image = ((image - (255.0 / 2)) / 255.0)
-                batch_features[i, j, :] = image
-                batch_labels[i] = y * scale
+                if args.mode == 'diff':
+                    img_name_ahead = index_values[idx + args.lookahead_window]
+                    image_ahead = cv2.imread(img_name_ahead)
+                    image_ahead = crop(image_ahead)
+                    image_ahead = np.asarray(image_ahead)
+                    # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                    # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                    concat_image = image - image_ahead
+                    for j in range(args.num_frames-1):
+                        img_name_ahead = index_values[idx + j +1 + args.lookahead_window]
+                        image_ahead = cv2.imread(img_name_ahead)
+                        image_ahead = crop(image_ahead)
+                        image_ahead = np.asarray(image_ahead)
+                        # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                        # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                        diff=image-image_ahead
+                        concat_image=np.concatenate((concat_image, diff), axis=0)
+                if args.mode == 'concat':
+                    for j in range(args.num_frames-1):
+                        img_name_ahead = index_values[idx + j + args.lookahead_window]
+                        image_ahead = cv2.imread(img_name_ahead)
+                        image_ahead = crop(image_ahead)
+                        image_ahead = np.asarray(image_ahead)
+                        # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                        # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                        concat_image=np.concatenate((concat_image, image_ahead), axis=0)
+                batch_features[i, :] = concat_image
+                batch_labels[i] = y
 
-            for j in range(args.num_frames):
-                img_name_ahead=index_values[idx+j+args.lookahead_window]
-                image_ahead = cv2.imread(img_name_ahead)
-                image_ahead = np.asarray(image_ahead)
-                image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
-                image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
-                batch_features[i, args.num_frames+j, :] = image_ahead
-
-
-        yield batch_features, batch_labels
-
+            yield batch_features, batch_labels
 
 def split_seq_dataset_groups(args):
     images = []
@@ -324,6 +750,463 @@ def generator_seq_dataset_groups(samples, args):
             y_train = np.array(y)
             yield shuffle(X_train, y_train)
 
+def predict(model,pretrained_weights,args):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    pred = []
+    real = []
+    df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    fnames = np.array('Ch2/' + df['filename'])
+    angles = np.array(df['angle'])
+    for ix, tr in enumerate(zip(fnames, angles)):
+        if  args.num_samples > 0:
+            if ix >= args.num_samples:
+               break
+        img, angle = val_output(tr)
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+
+        real.append(angle)
+        pred.append(model.predict(img.reshape(-1, 480, 640, 3))[0][0])
+        if ix % 1000 == 0:
+            print(str(ix))
+        #if ix> 1000:
+        #   break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions.png')
+    # plt.show()
+
+    # df = pd.DataFrame()
+    # df['fnames'] = fnames
+    # df['angle'] =  real
+    # df['pred'] = pred
+    # df.to_csv('results_lookahead.csv')
+def predict_temporal(model,pretrained_weights,args, input_shape=(480, 640, 3)):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    temporal_features = np.zeros(( 2 * args.num_frames, *input_shape))
+
+
+    images = load_images(args)
+    pred = []
+    real = []
+    #df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    #df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    index_values=images[:, 0]
+    labels=(images[:, 1])
+
+    num_samples=len(labels)-2*args.num_frames - args.lookahead_window-1
+
+    for index in range(0,num_samples):
+        angle =float(labels[index])
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+
+        for j in range(args.num_frames):
+            temporal_label = float(labels[index + j])
+
+            if args.angles_degree == True:
+                temporal_label = temporal_label * radian_to_degree
+
+            img_name = index_values[index + j]
+            image = cv2.imread(img_name)
+            image = np.asarray(image)
+
+            # image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+            # image = ((image - (255.0 / 2)) / 255.0)
+            temporal_features[j, :] = image
+
+
+        for j in range(args.num_frames):
+            img_name_ahead = index_values[index + j + args.lookahead_window]
+            image_ahead = cv2.imread(img_name_ahead)
+            image_ahead = np.asarray(image_ahead)
+            # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+            # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+            temporal_features[args.num_frames + j, :] = image_ahead
+
+
+        real.append(temporal_label)
+        prediction=model.predict(temporal_features.reshape(-1,args.num_frames*2,480,640,3))[0][0]
+        pred.append(float(prediction))
+        if index % 1000 == 0:
+            print(str(index))
+        #if index> 100:
+        #   break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    if args.angles_degree == True:
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred - real) ** 2))/radian_to_degree)
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred/radian_to_degree - real/radian_to_degree) ** 2)) )
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions_temporal.png')
+
+def predict_temporal_timedistrib(model,pretrained_weights,args, input_shape=(240, 640, 3)):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    temporal_features = np.zeros(( 2, args.num_frames, *input_shape))
+
+
+    images = load_images(args)
+    pred = []
+    real = []
+    #df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    #df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    index_values=images[:, 0]
+    labels=(images[:, 1])
+
+    num_samples=len(labels)-2*args.num_frames - args.lookahead_window-1
+
+    for index in range(0,num_samples):
+        angle =float(labels[index])
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+
+        for j in range(args.num_frames):
+            temporal_label = float(labels[index + j])
+
+            if args.angles_degree == True:
+                temporal_label = temporal_label * radian_to_degree
+
+            img_name = index_values[index + j]
+            image = cv2.imread(img_name)
+            image=crop(image)
+            image = np.asarray(image)
+
+            # image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+            # image = ((image - (255.0 / 2)) / 255.0)
+            temporal_features[0,j, :] = image
+
+
+        for j in range(args.num_frames):
+            img_name_ahead = index_values[index + j + args.lookahead_window]
+            image_ahead = cv2.imread(img_name_ahead)
+            image_ahead=crop(image_ahead)
+            image_ahead = np.asarray(image_ahead)
+            # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+            # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+            temporal_features[1,j, :] = image_ahead
+
+
+        real.append(temporal_label)
+        prediction=model.predict(temporal_features.reshape(-1,args.num_frames*2,480,640,3))[0][0]
+        pred.append(float(prediction))
+        if index % 1000 == 0:
+            print(str(index))
+        #if index> 100:
+        #   break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    if args.angles_degree == True:
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred - real) ** 2))/radian_to_degree)
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred/radian_to_degree - real/radian_to_degree) ** 2)) )
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions_temporal.png')
+def predict_diff(model,pretrained_weights,args, input_shape=(240, 640, 3)):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    temporal_features = np.zeros(( 240*(args.num_frames), 640, 3))
+
+
+    images = load_images(args)
+    pred = []
+    real = []
+    #df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    #df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    index_values=images[:, 0]
+    labels=(images[:, 1])
+
+    num_samples=len(labels)-args.num_frames - args.lookahead_window-1
+
+    for index in range(0,num_samples):
+        angle =float(labels[index])
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+        y = float(labels[index])
+        img_name = index_values[index]
+        image = cv2.imread(img_name)
+        image = crop(image)
+        image = np.asarray(image)
+        concat_image = image
+
+        if args.mode == 'diff':
+            img_name_ahead = index_values[index + args.lookahead_window]
+            image_ahead = cv2.imread(img_name_ahead)
+            image_ahead = crop(image_ahead)
+            image_ahead = np.asarray(image_ahead)
+            # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+            # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+            concat_image = image - image_ahead
+            for j in range(args.num_frames-1):
+                img_name_ahead = index_values[index + j + 1 + args.lookahead_window]
+                image_ahead = cv2.imread(img_name_ahead)
+                image_ahead = crop(image_ahead)
+                image_ahead = np.asarray(image_ahead)
+                # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                diff = image - image_ahead
+                concat_image = np.concatenate((concat_image, diff), axis=0)
+        if args.mode == 'concat':
+            for j in range(args.num_frames - 1):
+                img_name_ahead = index_values[index + j + args.lookahead_window]
+                image_ahead = cv2.imread(img_name_ahead)
+                image_ahead = crop(image_ahead)
+                image_ahead = np.asarray(image_ahead)
+                # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                concat_image = np.concatenate((concat_image, image_ahead), axis=0)
+
+        temporal_features = concat_image
+        temporal_label = y
+
+
+        real.append(temporal_label)
+        prediction=model.predict(temporal_features.reshape(-1,args.num_frames *240,640,3))[0][0]
+        pred.append(float(prediction))
+        if index % 1000 == 0:
+            print(str(index))
+        #if index> 1:
+        #  break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    rmsenum= np.sqrt(np.mean((pred - real) ** 2))
+    print("Mean Error: ",rmsenum)
+    if args.angles_degree == True:
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred - real) ** 2))/radian_to_degree)
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred/radian_to_degree - real/radian_to_degree) ** 2)) )
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions_temporal.png')
+
+    return rmsenum
+
+def predict_just_ahead(model,pretrained_weights,args, input_shape=(240, 640,1)):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    temporal_features = np.zeros((args.num_frames, *input_shape))
+
+
+    images = load_images(args)
+    pred = []
+    real = []
+    #df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    #df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    index_values=images[:, 0]
+    labels=(images[:, 1])
+
+    num_samples=len(labels)-args.num_frames -1
+
+    for index in range(0,num_samples):
+        angle =float(labels[index])
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+
+        for j in range(args.num_frames):
+
+
+            if args.angles_degree == True:
+                temporal_label = temporal_label * radian_to_degree
+
+            img_name = index_values[index + j]
+            image = cv2.imread(img_name)
+            image = np.asarray(image)
+            image=preprocess_image(image)
+
+            # image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+            # image = ((image - (255.0 / 2)) / 255.0)
+            temporal_features[j, :] = image
+        temporal_label = float(labels[index])
+
+
+
+        real.append(temporal_label)
+        prediction=model.predict(temporal_features.reshape(-1,args.num_frames,240,640,1))[0][0]
+        pred.append(float(prediction))
+        if index % 1000 == 0:
+            print(str(index))
+        #if index> 100:
+        #   break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    if args.angles_degree == True:
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred - real) ** 2))/radian_to_degree)
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred/radian_to_degree - real/radian_to_degree) ** 2)) )
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions_temporal.png')
+def predict_shift(model,pretrained_weights,args):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    pred = []
+    real = []
+    full_imgs, fnames = make_full_dataset(args.root_dir, args.direction,
+                                          True, args.steer_threshold, args.drop_low_angles,
+                                          args.steer_correction, args.window_len, args.lookahead)
+    full_gen = generator_seq_dataset_groups(full_imgs, args)
+
+    print("Full imgs shape: ", full_imgs.shape)
+    for ix in range(int(len(full_imgs) / args.batch_size)):
+        if args.num_samples > 0:
+            if ix >= (args.num_samples / args.batch_size):
+                break
+
+        inp, _real = next(full_gen)
+        _pred = model.predict(inp)
+        # print(_pred[:,0].shape, _real.shape)
+        real.extend(_real)
+        pred.extend(_pred[:, 0])
+        if ix % 100 == 0:
+            print(str(ix))
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights+ 'pred_baseline.png')
+    # plt.show()
+    #print(len(fnames), pred.shape, real.shape)
+    #df = pd.DataFrame()
+    #df['fnames'] = fnames[:len(real)]
+    #df['angle'] = real
+    #df['pred'] = pred
+    #df.to_csv('results_baseline.csv')
+
+    #print(history_object.history['val_loss'])
+    #print(history_object.history['loss'])
+
+
+def predict_just_ahead_nvidia(model,pretrained_weights,args, input_shape=(240, 640,3)):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    temporal_features = np.zeros(input_shape)
+
+
+    images = load_images(args)
+    pred = []
+    real = []
+    #df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    #df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    index_values=images[:, 0]
+    labels=(images[:, 1])
+
+    num_samples=len(labels)-args.lookahead_window -1
+
+    for index in range(0,num_samples):
+        angle =float(labels[index])
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+
+
+        if args.angles_degree == True:
+            temporal_label = temporal_label * radian_to_degree
+
+        img_name = index_values[index + args.lookahead_window]
+        image = cv2.imread(img_name)
+        image = crop(image)
+        image = np.asarray(image)
+
+
+        # image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+        # image = ((image - (255.0 / 2)) / 255.0)
+        temporal_features[:] = image
+        temporal_label = float(labels[index])
+
+
+
+        real.append(temporal_label)
+        prediction=model.predict(temporal_features.reshape(-1,240,640,3))[0][0]
+        pred.append(float(prediction))
+        #if index % 1000 == 0:
+        #    print(str(index))
+        #if index> 100:
+        #   break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    if args.angles_degree == True:
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred - real) ** 2))/radian_to_degree)
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred/radian_to_degree - real/radian_to_degree) ** 2)) )
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions_temporal.png')
 
 # utils functions
 
@@ -464,96 +1347,11 @@ def make_seq_dataset(args):
     #seq_images = preprocess(seq_images, steer_threshold, drop_low_angles)
     return np.array(train_imgs), np.array(val_imgs)
 
-def predict(model,pretrained_weights,args):
-    model.load_weights("{}.h5".format(pretrained_weights))
-    # print(model.get_weights())
-
-    pred = []
-    real = []
-    df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
-    df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
-
-    fnames = np.array('Ch2/' + df['filename'])
-    angles = np.array(df['angle'])
-    for ix, tr in enumerate(zip(fnames, angles)):
-        if  args.num_samples > 0:
-            if ix >= args.num_samples:
-               break
-        img, angle = val_output(tr)
-        real.append(angle)
-        pred.append(model.predict(img.reshape(-1, 480, 640, 3))[0][0])
-        if ix % 100 == 0:
-            print(str(ix))
-
-    pred = np.array(pred)
-    real = np.array(real)
-    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
-    plt.figure(figsize=(16, 9))
-    plt.plot(pred, label='Predicted')
-    plt.plot(real, label='Actual')
-    plt.legend()
-    plt.savefig(pretrained_weights + 'predictions.png')
-    # plt.show()
-
-    # df = pd.DataFrame()
-    # df['fnames'] = fnames
-    # df['angle'] =  real
-    # df['pred'] = pred
-    # df.to_csv('results_lookahead.csv')
-
-def predict_shift(model,pretrained_weights,args):
-    model.load_weights("{}.h5".format(pretrained_weights))
-    pred = []
-    real = []
-    full_imgs, fnames = make_full_dataset(args.root_dir, args.direction,
-                                          True, args.steer_threshold, args.drop_low_angles,
-                                          args.steer_correction, args.window_len, args.lookahead)
-    full_gen = generator_seq_dataset_groups(full_imgs, args)
-
-    print("Full imgs shape: ", full_imgs.shape)
-    for ix in range(int(len(full_imgs) / args.batch_size)):
-        if args.num_samples > 0:
-            if ix >= (args.num_samples / args.batch_size):
-                break
-
-        inp, _real = next(full_gen)
-        _pred = model.predict(inp)
-        # print(_pred[:,0].shape, _real.shape)
-        real.extend(_real)
-        pred.extend(_pred[:, 0])
-        if ix % 100 == 0:
-            print(str(ix))
-
-    pred = np.array(pred)
-    real = np.array(real)
-    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
-    plt.figure(figsize=(16, 9))
-    plt.plot(pred, label='Predicted')
-    plt.plot(real, label='Actual')
-    plt.legend()
-    plt.savefig(pretrained_weights+ 'pred_baseline.png')
-    # plt.show()
-    #print(len(fnames), pred.shape, real.shape)
-    #df = pd.DataFrame()
-    #df['fnames'] = fnames[:len(real)]
-    #df['angle'] = real
-    #df['pred'] = pred
-    #df.to_csv('results_baseline.csv')
-
-    #print(history_object.history['val_loss'])
-    #print(history_object.history['loss'])
-
 def load_image(data_dir, image_file):
     """
     Load RGB images from a file
     """
     return mpimg.imread(os.path.join(data_dir, image_file.strip()))
-
-def crop(image):
-    """
-    Crop the image (removing the sky at the top and the car front at the bottom)
-    """
-    return image[60:-25, :, :] # remove the sky and the car front
 
 def resize(image):
     """
@@ -721,7 +1519,7 @@ def std_evaluate(model, generator, size):
         y_pred = model.predict_on_batch(X_batch)
         err_sum += np.sum((y_batch - y_pred) ** 2)
         err_count += len(y_pred)
-        if count == size:
+        if count > size-1:
             break
 
     mse = err_sum / err_count
