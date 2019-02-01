@@ -127,7 +127,7 @@ def nvidia_model_tuned(num_outputs, l2reg):
 
     model.add(Dense(num_outputs, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
                     kernel_regularizer=regularizers.l2(l2reg)))
-
+    model.summary()
     return model
 def nvidia_model_tuned2(num_outputs, l2reg):
     # Keras NVIDIA type model
@@ -183,7 +183,7 @@ def nvidia_model_tuned2(num_outputs, l2reg):
 
     model.add(Dense(num_outputs, use_bias=True, kernel_initializer='glorot_normal', bias_initializer='zeros',
                     kernel_regularizer=regularizers.l2(l2reg)))
-
+    model.summary()
     return model
 
 def nvidia_model_basic():
@@ -699,8 +699,8 @@ def resnet50_pre_trained_model():
     image_input = Input(shape=(480, 640, 3))
     base_model = ResNet50(input_tensor=image_input, include_top=False, weights='imagenet')
     base_model.summary()
-    last_layer = base_model.get_layer('avg_pool').output
-    x = Flatten(name='flatten')(last_layer)
+    #last_layer = base_model.get_layer('avg_pool').output
+    x = Flatten(name='flatten')(base_model.output)
     x = Dense(1024, activation="relu")(x)
     x = Dense(512, activation="relu")(x)
     x = Dense(256, activation="relu")(x)
@@ -715,6 +715,36 @@ def resnet50_pre_trained_model():
 
     return model
 
+def build_model_resnet50_fully():
+    """
+    RESNET50 pre-trained Transfer Learning
+    Get the model. Remove final layers and attach my own fully
+    connected layers.
+    Flatten : 2048
+    Fully connected: 1024
+    Fully connected: 512
+    Fully connected: 256
+    Fully connected: 128
+    Fully connected: 64
+    Fully connected: 1
+    """
+
+    #    image_input = Input(shape=(224, 224, 3))
+    image_input = Input(shape=(480, 640, 3))
+    base_model = ResNet50(input_tensor=image_input, include_top=False, weights='imagenet')
+    base_model.summary()
+    #last_layer = base_model.get_layer('avg_pool').output
+    x = Flatten(name='flatten')(base_model.output)
+    x = Dense(1024, activation="relu")(x)
+    x = Dense(512, activation="relu")(x)
+    x = Dense(256, activation="relu")(x)
+    x = Dense(128, activation="relu")(x)
+    x = Dense(64, activation="relu")(x)
+    out = Dense(1, activation='softmax', name='output_layer')(x)
+    model = Model(inputs=image_input, outputs=out)
+    #    model = Model(input=image_input,output= out)
+    model.summary()
+    return model
 #Image sharing models
 def shift_model(num_outputs, l2reg, num_inputs):
     # Keras NVIDIA type model

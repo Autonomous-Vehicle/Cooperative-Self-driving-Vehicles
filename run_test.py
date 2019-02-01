@@ -736,12 +736,13 @@ def main(args):
     args.num_epochs = 14
 
     test_nvidia=0
-    test_nvidia_future_img=1
+    test_nvidia_future_img=0
     made_video=0
-    test_predictions=0
+    test_predictions=1
     test_conv3d=0
     test_con2d_ahead=0
     test_lstm=0
+    test_lstm_2=0
     test_conv3d_lstm =0
     test_conv3d_just_ahead=0
     test_conv2d_diff=0
@@ -800,6 +801,31 @@ def main(args):
         val_gen = fn.generator_seq_dataset_chunks_ahead(val_imgs[:, 1], val_imgs[:, 0], args)
 
         LSTM_img_sharing_ahead(args, train_imgs, val_imgs, train_gen, val_gen)
+
+    if test_lstm_2 == 1:
+        # LSTM
+        args.num_frames = 8
+        train_imgs, val_imgs = fn.split_seq_dataset_simple(args)
+        if args.num_samples > 0:
+            train_imgs = train_imgs[:args.num_samples]
+            val_imgs = val_imgs[:args.num_samples_va]
+
+        train_gen = fn.generator_seq_dataset_chunks_ahead_v2(train_imgs[:, 1], train_imgs[:, 0], args)
+        val_gen = fn.generator_seq_dataset_chunks_ahead_v2(val_imgs[:, 1], val_imgs[:, 0], args)
+
+        args.lookahead_window = 30
+        args.num_frames = 8
+        print("LSTM_img_sharing_ahead")
+        args.pretrained = 'out/mymodelLSTM_img_sharing_ahead30_f8'
+        args.save_model = 'out/mymodelLSTM_img_sharing_ahead30f_8'
+        print(args)
+        model = models.LSTM_img_sharing_ahead(args)
+
+        train_model_adam(model, args, train_imgs, val_imgs, train_gen, val_gen)
+
+        if args.pretrained != 'None':
+            fn.predict_temporalv2(model, args.pretrained, args)
+            # print(fn.std_evaluate(model, val_gen, (len(val_imgs) / args.batch_size)))
 
     """""
         # Shift dataset 2images gray
@@ -902,15 +928,22 @@ def main(args):
         fn.create_video_pre_process(args,model)
 
     if test_predictions==1:
-        # args.bad_angles = False
-        # args.pretrained="nvidia_model_basic_all_angles"
-        # model=models.nvidia_model_basic()
-        # predict(model, args.pretrained, args)
+        args.bad_angles = True
+        args.pretrained="mymodelnvidia_tuned"
+        model=models.nvidia_model_tuned(1,args.l2reg)
+        predict(model, args.pretrained, args)
         #
-        # args.pretrained="nvidia_model_basic_good_angles"
-        # model=models.nvidia_model_basic()
-        # predict(model, args.pretrained, args)
+
         """
+        args.bad_angles = False
+        args.pretrained="out/mymodelnvidia_model_basic2"
+        model=models.nvidia_model_basic3()
+        predict(model, args.pretrained, args)
+        
+        args.pretrained="nvidia_model_basic_good_angles"
+        model=models.nvidia_model_basic()
+        predict(model, args.pretrained, args)
+        
         args.pretrained = "mymodelConv3D_img_sharing_ahead"
         args.num_frames = 10
         args.lookahead_window = 15

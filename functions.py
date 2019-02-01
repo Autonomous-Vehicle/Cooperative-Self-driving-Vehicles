@@ -545,6 +545,46 @@ def generator_seq_dataset_chunks_ahead(labels, index_values, args, scale=1.0, ra
 
             yield batch_features, batch_labels
 
+def generator_seq_dataset_chunks_ahead_v2(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(480, 640, 3)):
+
+    batch_features = np.zeros((args.batch_size, 2*args.num_frames, *input_shape))
+    batch_labels = np.zeros((args.batch_size, 1))
+    num_samples=len(labels)-args.num_frames - args.lookahead_window-1
+    value_range = np.arange(0,len(labels)-args.num_frames - args.lookahead_window-1)
+    value_shuffle=shuffle(value_range)
+    while True:
+        #next_indexes = np.random.choice(np.arange(0, len(index_values) - 2*args.num_frames - args.lookahead_window + - 1), args.batch_size)
+        for offset in range(0, num_samples, args.batch_size):
+            index_to_batch=value_shuffle[offset:offset+args.batch_size]
+            for i, idx in enumerate(index_to_batch):
+                for j in range(args.num_frames):
+                    y = float(labels[idx+j])
+
+                    img_name=index_values[idx+j]
+                    image = cv2.imread(img_name)
+                    image = np.asarray(image)
+
+                    if random_flip:
+                        flip_bit = random.randint(0, 1)
+                        if flip_bit == 1:
+                            image = np.flip(image, 1)
+                            y = y * -1
+                    #image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+                    #image = ((image - (255.0 / 2)) / 255.0)
+                    batch_features[i, j, :] = image
+                    batch_labels[i] = y
+
+                for j in range(args.num_frames):
+                    img_name_ahead=index_values[idx-j+args.lookahead_window]
+                    image_ahead = cv2.imread(img_name_ahead)
+                    image_ahead = np.asarray(image_ahead)
+                    #image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+                    #image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+                    batch_features[i, args.num_frames+j, :] = image_ahead
+
+
+            yield batch_features, batch_labels
+
 
 def generator_seq_dataset_chunks_ahead_time(labels, index_values, args, scale=1.0, random_flip=False, input_shape=(240, 640, 3)):
     batch_features = np.zeros((args.batch_size, 2, args.num_frames, *input_shape))
@@ -753,7 +793,7 @@ def generator_seq_dataset_groups(samples, args):
 def predict(model,pretrained_weights,args):
     model.load_weights("{}.h5".format(pretrained_weights))
     #print(model.get_weights())
-
+    print("Start the predictions")
     pred = []
     real = []
     df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
@@ -776,20 +816,30 @@ def predict(model,pretrained_weights,args):
                 continue
 
         real.append(angle)
-        pred.append(model.predict(img.reshape(-1, 480, 640, 3))[0][0])
-        if ix % 1000 == 0:
-            print(str(ix))
+        prediction=model.predict(img.reshape(-1, 480, 640, 3))[0][0]
+        print(prediction)
+        pred.append(prediction)
+        #if ix % 1000 == 0:
+        #    print(str(ix))
         #if ix> 1000:
         #   break
 
     pred = np.array(pred)
+
     real = np.array(real)
+    error=pred-real
+    print(error)
     print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
     plt.figure(figsize=(16, 9))
     plt.plot(pred, label='Predicted')
     plt.plot(real, label='Actual')
     plt.legend()
     plt.savefig(pretrained_weights + 'predictions.png')
+
+    plt.figure(figsize=(16, 9))
+    plt.plot(error, label='Error')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'error.png')
     # plt.show()
 
     # df = pd.DataFrame()
@@ -843,6 +893,80 @@ def predict_temporal(model,pretrained_weights,args, input_shape=(480, 640, 3)):
 
         for j in range(args.num_frames):
             img_name_ahead = index_values[index + j + args.lookahead_window]
+            image_ahead = cv2.imread(img_name_ahead)
+            image_ahead = np.asarray(image_ahead)
+            # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
+            # image_ahead = ((image_ahead - (255.0 / 2)) / 255.0)
+            temporal_features[args.num_frames + j, :] = image_ahead
+
+
+        real.append(temporal_label)
+        prediction=model.predict(temporal_features.reshape(-1,args.num_frames*2,480,640,3))[0][0]
+        pred.append(float(prediction))
+        if index % 1000 == 0:
+            print(str(index))
+        #if index> 100:
+        #   break
+
+    pred = np.array(pred)
+    real = np.array(real)
+    print("Mean Error: ", np.sqrt(np.mean((pred - real) ** 2)))
+    if args.angles_degree == True:
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred - real) ** 2))/radian_to_degree)
+        print("Mean Error in  radians: ", np.sqrt(np.mean((pred/radian_to_degree - real/radian_to_degree) ** 2)) )
+    plt.figure(figsize=(16, 9))
+    plt.plot(pred, label='Predicted')
+    plt.plot(real, label='Actual')
+    plt.legend()
+    plt.savefig(pretrained_weights + 'predictions_temporal.png')
+
+
+def predict_temporalv2(model,pretrained_weights,args, input_shape=(480, 640, 3)):
+    model.load_weights("{}.h5".format(pretrained_weights))
+    #print(model.get_weights())
+
+    temporal_features = np.zeros(( 2 * args.num_frames, *input_shape))
+
+
+    images = load_images(args)
+    pred = []
+    real = []
+    #df = pd.read_csv("Ch2/interpolated.csv", dtype={'angle': np.float, 'torque': np.float, 'speed': np.float})
+    #df = df[df['frame_id'] == 'center_camera'].reset_index(drop=True)
+
+    index_values=images[:, 0]
+    labels=(images[:, 1])
+
+    num_samples=len(labels)-args.num_frames - args.lookahead_window-1
+
+    for index in range(0,num_samples):
+        angle =float(labels[index])
+
+        if args.bad_angles == True:
+            if angle == 0:
+                continue
+            if angle * 57 > 50:
+                continue
+            if angle * 57 < -50:
+                continue
+
+        for j in range(args.num_frames):
+            temporal_label = float(labels[index + j])
+
+            if args.angles_degree == True:
+                temporal_label = temporal_label * radian_to_degree
+
+            img_name = index_values[index + j]
+            image = cv2.imread(img_name)
+            image = np.asarray(image)
+
+            # image[:, :, 0] = cv2.equalizeHist(image[:, :, 0])
+            # image = ((image - (255.0 / 2)) / 255.0)
+            temporal_features[j, :] = image
+
+
+        for j in range(args.num_frames):
+            img_name_ahead = index_values[index - j + args.lookahead_window]
             image_ahead = cv2.imread(img_name_ahead)
             image_ahead = np.asarray(image_ahead)
             # image_ahead[:, :, 0] = cv2.equalizeHist(image_ahead[:, :, 0])
