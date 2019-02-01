@@ -738,7 +738,7 @@ def main(args):
     test_nvidia=0
     test_nvidia_future_img=0
     made_video=0
-    test_predictions=1
+    test_predictions=0
     test_conv3d=0
     test_con2d_ahead=0
     test_lstm=0
@@ -950,12 +950,13 @@ def main(args):
         model=models.Con3d_model(args)
         fn.predict_temporal(model, args.pretrained, args)
         
-                args.pretrained = "mymodelCONv2D_img_concat22"
+        args.pretrained = "mymodelCONv2D_img_concat22"
         args.mode = 'concat'
         args.num_frames = 2
         model = models.nvidia_model_concat(args)
         rmse = []
         index=[]
+        
         for i in range(0,100,5):
             args.lookahead_window = i
 
